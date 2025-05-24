@@ -1,7 +1,11 @@
 // routes/crud.js
 const express = require('express');
 const mongoose = require('mongoose');
+const authMiddleware = require('../middlewares/authMiddleware');
 const router = express.Router();
+
+// Apply authentication middleware to all routes
+router.use(authMiddleware);
 
 // Helper function to get or create a dynamic Mongoose model
 const getDynamicModel = (collectionName) => {
@@ -34,7 +38,7 @@ const getDynamicModel = (collectionName) => {
 //   "offsetCount": 0, // Added offset for full pagination control
 //   "startAfter": 0   // Alternative for offset, typically used as a skip count for pagination
 // }
-const parseStructuredQuery = (jsonQueryString) => {
+const parseStructuredQuery = (jsonQueryString, userId) => {
     const filter = {};
     const options = {};
     let parsedQuery;
@@ -74,7 +78,13 @@ const parseStructuredQuery = (jsonQueryString) => {
     const fieldConditions = {};
 
     for (const condition of conditions) {
-        const { field, operator, value } = condition;
+        let { field, operator, value } = condition;
+
+        if (field == 'userId') {
+            // Special case for userId, use req.user.uid
+            value = userId; // Use authenticated user's UID
+        }
+
         const mongooseOp = opMap[operator];
 
         if (!field || !operator || value === undefined) {
@@ -168,7 +178,7 @@ router.get('/:collectionName', async (req, res) => {
         // Check if the 'query' parameter exists and is a string
         if (req.query.query && typeof req.query.query === 'string') {
             try {
-                const parsed = parseStructuredQuery(req.query.query);
+                const parsed = parseStructuredQuery(req.query.query, req.user.uid);
                 filter = parsed.filter;
                 options = parsed.options;
             } catch (error) {

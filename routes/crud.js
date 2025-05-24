@@ -165,6 +165,41 @@ const parseStructuredQuery = (jsonQueryString, userId) => {
     return { filter, options };
 };
 
+const getCollectionPipeline = (collectionName, queryParams, basePipeline) => {
+    if (collectionName === 'transactions') {
+        return [
+            {
+                $addFields: {
+                    amountCents: { $round: [{ $multiply: ["$amount", 100] }, 0] }
+                }
+            },
+            {
+                $setWindowFields: {
+                    partitionBy: "$accountId",
+                    sortBy: { date: 1, _id: 1 },
+                    output: {
+                        balanceCents: {
+                            $sum: "$amountCents",
+                            window: { documents: ["unbounded", "current"] }
+                        }
+                    }
+                }
+            },
+            {
+                $addFields: {
+                    balance: { $divide: ["$balanceCents", 100] }
+                }
+            },
+            {
+                $project: {
+                    amountCents: 0,
+                    balanceCents: 0
+                }
+            },
+        ]
+    }
+}
+
 // GET all documents in a collection with filtering, sorting, and pagination
 // Example: GET /data/users?query={"conditions":[{"field":"age","operator":">","value":25},{"field":"isActive","operator":"==","value":true}],"orderByField":"age","orderDirection":"asc","limitCount":10,"offsetCount":0}
 router.get('/:collectionName', async (req, res) => {
@@ -178,7 +213,7 @@ router.get('/:collectionName', async (req, res) => {
         // Check if the 'query' parameter exists and is a string
         if (req.query.query && typeof req.query.query === 'string') {
             try {
-                const parsed = parseStructuredQuery(req.query.query, req.user.uid);
+                const parsed = parseStructuredQuery(req.query.query, req.user?.uid ?? '');
                 filter = parsed.filter;
                 options = parsed.options;
             } catch (error) {
@@ -186,18 +221,39 @@ router.get('/:collectionName', async (req, res) => {
             }
         }
 
-        const query = Model.find(filter);
+        const pipeline = [
+            {
+                $match: filter,
+            },
+        ];
+
+        // I need a dynamic way to add new pipeline stages based on query parameters
+        // it should be based on the collectionName
+        const collectionPipeline = getCollectionPipeline(collectionName, req.query, pipeline);
+
+        if (collectionPipeline) {
+            pipeline.push(...collectionPipeline);
+        }
 
         if (options.sort) {
-            query.sort(options.sort);
-        }
-        if (options.limit) {
-            query.limit(options.limit);
-        }
-        if (options.skip) {
-            query.skip(options.skip);
+            pipeline.push({
+                $sort: options.sort,
+            });
         }
 
+        if (options.skip) {
+            pipeline.push({
+                $skip: options.skip,
+            });
+        }
+
+        if (options.limit) {
+            pipeline.push({
+                $limit: options.limit,
+            });
+        }
+
+        const query = Model.aggregate(pipeline);
         const documents = await query.exec();
         const total = await Model.countDocuments(filter); // Count total matching documents
 
@@ -225,7 +281,7 @@ router.get('/:collectionName/:id', async (req, res) => {
         if (!document) {
             return res.status(404).json({ msg: 'Document not found' });
         }
-        
+
         res.json(document);
     } catch (err) {
         console.error(err.message);
@@ -287,7 +343,7 @@ router.put('/:collectionName/:id', async (req, res) => {
     try {
         const collectionName = req.params.collectionName;
         const Model = getDynamicModel(collectionName);
-        
+
         const updatedDocument = await Model.findOneAndUpdate(
             { id: req.params.id },
             req.body,

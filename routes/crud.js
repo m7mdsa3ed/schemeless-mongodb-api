@@ -176,7 +176,7 @@ const getCollectionPipeline = (collectionName, queryParams, basePipeline) => {
             {
                 $setWindowFields: {
                     partitionBy: "$accountId",
-                    sortBy: { id: 1, },
+                    sortBy: { date: 1, id: 1 },
                     output: {
                         balanceCents: {
                             $sum: "$amountCents",

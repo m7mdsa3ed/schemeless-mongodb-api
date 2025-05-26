@@ -385,4 +385,38 @@ router.delete('/:collectionName/:id', async (req, res) => {
     }
 });
 
+// DELETE multiple documents by IDs (bulk delete)
+router.delete('/:collectionName/batch', async (req, res) => {
+    try {
+        const collectionName = req.params.collectionName;
+        const Model = getDynamicModel(collectionName);
+
+        // Validate body: should be an array of IDs
+        const { ids } = req.body;
+        if (!Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ msg: 'Request body must contain a non-empty array "ids".' });
+        }
+
+        // Perform bulk delete using deleteMany
+        const result = await Model.deleteMany({ id: { $in: ids } });
+
+        // result.deletedCount tells how many were actually deleted
+        const successCount = result.deletedCount || 0;
+        // If you want to know which IDs were not found, you can optionally fetch missing ones:
+        let errors = [];
+        if (successCount !== ids.length) {
+            // Optional: Find which IDs were not deleted (i.e., not found)
+            const foundDocs = await Model.find({ id: { $in: ids } }).select('id');
+            const foundIds = foundDocs.map(doc => doc.id);
+            const notFoundIds = ids.filter(id => !foundIds.includes(id));
+            errors = notFoundIds.map(id => ({ id, error: 'Not found' }));
+        }
+
+        return res.json({ successCount, errors });
+    } catch (err) {
+        console.error('Batch delete error:', err.message);
+        res.status(500).json({ msg: 'Server Error' });
+    }
+});
+
 module.exports = router;

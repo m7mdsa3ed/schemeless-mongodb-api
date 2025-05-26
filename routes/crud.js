@@ -363,28 +363,6 @@ router.put('/:collectionName/:id', async (req, res) => {
     }
 });
 
-// DELETE a document by ID
-router.delete('/:collectionName/:id', async (req, res) => {
-    try {
-        const collectionName = req.params.collectionName;
-        const Model = getDynamicModel(collectionName);
-        const deletedDocument = await Model.findOneAndDelete({
-            id: req.params.id,
-        });
-
-        if (!deletedDocument) {
-            return res.status(404).json({ msg: 'Document not found' });
-        }
-        res.status(204).send();
-    } catch (err) {
-        console.error(err.message);
-        if (err.kind === 'ObjectId') {
-            return res.status(400).json({ msg: 'Invalid Document ID' });
-        }
-        res.status(500).send('Server Error');
-    }
-});
-
 // DELETE multiple documents by IDs (bulk delete)
 router.delete('/:collectionName/batch', async (req, res) => {
     try {
@@ -418,5 +396,28 @@ router.delete('/:collectionName/batch', async (req, res) => {
         res.status(500).json({ msg: 'Server Error' });
     }
 });
+
+// DELETE a document by ID
+router.delete('/:collectionName/:id', async (req, res) => {
+    try {
+        const collectionName = req.params.collectionName;
+        const Model = getDynamicModel(collectionName);
+        const deletedDocument = await Model.findOneAndDelete({
+            id: req.params.id,
+        });
+
+        if (!deletedDocument) {
+            return res.status(404).json({ msg: 'Document not found' });
+        }
+        res.status(204).send();
+    } catch (err) {
+        console.error(err.message);
+        if (err.kind === 'ObjectId') {
+            return res.status(400).json({ msg: 'Invalid Document ID' });
+        }
+        res.status(500).send('Server Error');
+    }
+});
+
 
 module.exports = router;

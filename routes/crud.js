@@ -56,7 +56,8 @@ const parseStructuredQuery = (jsonQueryString, userId) => {
         orderDirection = 'desc',
         limitCount = null,
         offsetCount = null, // Handle offset
-        startAfter = null, // New: for pagination cursor as skip count
+        startAfter = null, // New: for pagination cursor as skip count,
+        sortObject = null
     } = parsedQuery;
 
     const opMap = {
@@ -152,7 +153,7 @@ const parseStructuredQuery = (jsonQueryString, userId) => {
         }
     }
 
-    options.sort = { [orderByField]: orderDirection === 'asc' ? 1 : -1 };
+    options.sort = sortObject ??{ [orderByField]: orderDirection === 'asc' ? 1 : -1 };
     if (limitCount !== null) {
         options.limit = parseInt(limitCount);
     }

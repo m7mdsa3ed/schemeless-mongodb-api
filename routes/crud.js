@@ -1,27 +1,12 @@
 // routes/crud.js
 const express = require('express');
-const mongoose = require('mongoose');
 const authMiddleware = require('../middlewares/authMiddleware');
+const limitsMiddleware = require('../middlewares/limitsMiddleware');
+const { getDynamicModel } = require('../lib/getDynamicModel');
 const router = express.Router();
 
 // Apply authentication middleware to all routes
 router.use(authMiddleware);
-
-// Helper function to get or create a dynamic Mongoose model
-const getDynamicModel = (collectionName) => {
-    const modelName = collectionName.charAt(0).toUpperCase() + collectionName.slice(1);
-
-    if (mongoose.models[modelName]) {
-        return mongoose.models[modelName];
-    }
-
-    // Define a schemaless schema
-    const dynamicSchema = new mongoose.Schema({
-        id: { type: String, unique: true },
-    }, { strict: false, timestamps: true });
-
-    return mongoose.model(modelName, dynamicSchema);
-};
 
 // Helper to parse a structured JSON query parameter into Mongoose filter and options
 // This function now expects a JSON string like:
@@ -153,7 +138,7 @@ const parseStructuredQuery = (jsonQueryString, userId) => {
         }
     }
 
-    options.sort = sortObject ??{ [orderByField]: orderDirection === 'asc' ? 1 : -1 };
+    options.sort = sortObject ?? { [orderByField]: orderDirection === 'asc' ? 1 : -1 };
     if (limitCount !== null) {
         options.limit = parseInt(limitCount);
     }
@@ -166,40 +151,58 @@ const parseStructuredQuery = (jsonQueryString, userId) => {
     return { filter, options };
 };
 
-const getCollectionPipeline = (collectionName, queryParams, basePipeline) => {
-    if (collectionName === 'transactions') {
-        return [
-            {
-                $addFields: {
-                    amountCents: { $round: [{ $multiply: ["$amount", 100] }, 0] }
-                }
-            },
-            {
-                $setWindowFields: {
-                    partitionBy: "$accountId",
-                    sortBy: { date: 1, id: 1 },
-                    output: {
-                        balanceCents: {
-                            $sum: "$amountCents",
-                            window: { documents: ["unbounded", "current"] }
-                        }
+// Helper function to build the pipeline specifically for transactions
+const buildTransactionsPipeline = (userId, userFilter, queryParams) => {
+    const pipeline = [];
+
+    // 1. Initial match for balance scope (user, and accountId if specified by userFilter)
+    const initialMatchForBalance = { userId };
+
+    if (userFilter.accountId) { // If userFilter (derived from query) contains accountId
+        initialMatchForBalance.accountId = userFilter.accountId;
+    }
+
+    pipeline.push({ $match: initialMatchForBalance });
+
+    // 2. Balance calculation stages (formerly in getCollectionPipeline)
+    const balanceCalculationStages = [
+        {
+            $addFields: {
+                amountCents: { $round: [{ $multiply: ["$amount", 100] }, 0] }
+            }
+        },
+        {
+            $setWindowFields: {
+                partitionBy: "$accountId", // Assumes 'accountId' field exists for partitioning
+                sortBy: { date: 1, id: 1 },    // Ensure 'id' is unique for tie-breaking if dates are same
+                output: {
+                    balanceCents: {
+                        $sum: "$amountCents",
+                        window: { documents: ["unbounded", "current"] }
                     }
                 }
-            },
-            {
-                $addFields: {
-                    balance: { $divide: ["$balanceCents", 100] }
-                }
-            },
-            {
-                $project: {
-                    amountCents: 0,
-                    balanceCents: 0
-                }
-            },
-        ]
-    }
-}
+            }
+        },
+        {
+            $addFields: {
+                balance: { $divide: ["$balanceCents", 100] }
+            }
+        },
+        {
+            $project: {
+                amountCents: 0,
+                balanceCents: 0
+            }
+        },
+    ];
+
+    pipeline.push(...balanceCalculationStages);
+
+    // 3. Full user filter application
+    pipeline.push({ $match: userFilter });
+
+    return pipeline;
+};
 
 // GET all documents in a collection with filtering, sorting, and pagination
 // Example: GET /data/users?query={"conditions":[{"field":"age","operator":">","value":25},{"field":"isActive","operator":"==","value":true}],"orderByField":"age","orderDirection":"asc","limitCount":10,"offsetCount":0}
@@ -214,7 +217,7 @@ router.get('/:collectionName', async (req, res) => {
         // Check if the 'query' parameter exists and is a string
         if (req.query.query && typeof req.query.query === 'string') {
             try {
-                const parsed = parseStructuredQuery(req.query.query, req.user?.uid ?? '');
+                const parsed = parseStructuredQuery(req.query.query, req.user.uid);
                 filter = parsed.filter;
                 options = parsed.options;
             } catch (error) {
@@ -222,20 +225,24 @@ router.get('/:collectionName', async (req, res) => {
             }
         }
 
-        const pipeline = [
-            {
-                $match: filter,
-            },
-        ];
-
-        // I need a dynamic way to add new pipeline stages based on query parameters
-        // it should be based on the collectionName
-        const collectionPipeline = getCollectionPipeline(collectionName, req.query, pipeline);
-
-        if (collectionPipeline) {
-            pipeline.push(...collectionPipeline);
+        if (collectionName !== 'users') {
+            filter.userId ??= req.user.uid; // Ensures userId is set if not provided in query for other collections
+        } else {
+            // For the 'users' collection, always restrict to the current user's document.
+            // This overrides any 'id' potentially set in the query by parseStructuredQuery if it was for another user.
+            filter.id = req.user.uid;
         }
 
+        let pipeline = [];
+
+        if (collectionName === 'transactions') {
+            pipeline = buildTransactionsPipeline(req.user.uid, filter, req.query);
+        } else {
+            // For other collections, match first with the complete filter
+            pipeline.push({ $match: filter });
+        }
+
+        // Common stages: sort, skip, limit
         if (options.sort) {
             pipeline.push({
                 $sort: options.sort,
@@ -256,7 +263,7 @@ router.get('/:collectionName', async (req, res) => {
 
         const query = Model.aggregate(pipeline);
         const documents = await query.exec();
-        const total = await Model.countDocuments(filter); // Count total matching documents
+        const total = await Model.countDocuments(filter); // Count total matching documents based on the final filter
 
         res.json({
             data: documents,
@@ -277,10 +284,21 @@ router.get('/:collectionName/:id', async (req, res) => {
     try {
         const collectionName = req.params.collectionName;
         const Model = getDynamicModel(collectionName);
-        const document = await Model.findOne({ id: req.params.id });
+        let queryFilter = { id: req.params.id };
+
+        if (collectionName !== 'users') {
+            queryFilter.userId = req.user.uid;
+        } else {
+            // For 'users' collection, user can only get their own document.
+            if (req.params.id !== req.user.uid) {
+                return res.status(403).json({ msg: 'Forbidden: You can only access your own user document.' });
+            }
+        }
+
+        const document = await Model.findOne(queryFilter);
 
         if (!document) {
-            return res.status(404).json({ msg: 'Document not found' });
+            return res.status(404).json({ msg: 'Document not found or you are not authorized to access it' });
         }
 
         res.json(document);
@@ -294,7 +312,7 @@ router.get('/:collectionName/:id', async (req, res) => {
 });
 
 // POST create a new document
-router.post('/:collectionName', async (req, res) => {
+router.post('/:collectionName', limitsMiddleware, async (req, res) => {
     try {
         const collectionName = req.params.collectionName;
         const Model = getDynamicModel(collectionName);
@@ -308,7 +326,7 @@ router.post('/:collectionName', async (req, res) => {
 });
 
 // POST create multiple new documents (batch write)
-router.post('/:collectionName/batch', async (req, res) => {
+router.post('/:collectionName/batch', limitsMiddleware, async (req, res) => {
     try {
         const collectionName = req.params.collectionName;
         const Model = getDynamicModel(collectionName);
@@ -344,15 +362,26 @@ router.put('/:collectionName/:id', async (req, res) => {
     try {
         const collectionName = req.params.collectionName;
         const Model = getDynamicModel(collectionName);
+        let queryFilter = { id: req.params.id };
+
+        if (collectionName !== 'users') {
+            queryFilter.userId = req.user.uid;
+        } else {
+            // For 'users' collection, user can only update their own document.
+            if (req.params.id !== req.user.uid) {
+                return res.status(403).json({ msg: 'Forbidden: You can only update your own user document.' });
+            }
+            // queryFilter is already { id: req.params.id }, which is validated to be req.user.uid
+        }
 
         const updatedDocument = await Model.findOneAndUpdate(
-            { id: req.params.id },
+            queryFilter,
             req.body,
             { new: true, runValidators: true }
         );
 
         if (!updatedDocument) {
-            return res.status(404).json({ msg: 'Document not found' });
+            return res.status(404).json({ msg: 'Document not found or you are not authorized to update it' });
         }
         res.json(updatedDocument);
     } catch (err) {
@@ -370,25 +399,43 @@ router.delete('/:collectionName/batch', async (req, res) => {
         const collectionName = req.params.collectionName;
         const Model = getDynamicModel(collectionName);
 
-        // Validate body: should be an array of IDs
         const { ids } = req.body;
         if (!Array.isArray(ids) || ids.length === 0) {
             return res.status(400).json({ msg: 'Request body must contain a non-empty array "ids".' });
         }
 
-        // Perform bulk delete using deleteMany
-        const result = await Model.deleteMany({ id: { $in: ids } });
+        let deleteFilter = {};
+        let idsToConsiderForDeletion = [...ids]; // IDs that we might attempt to delete
 
-        // result.deletedCount tells how many were actually deleted
+        if (collectionName !== 'users') {
+            deleteFilter.id = { $in: ids };
+            deleteFilter.userId = req.user.uid;
+        } else {
+            // For 'users' collection, only allow deleting the user's own ID if present in the batch.
+            const currentUserIdsInBatch = ids.filter(id => id === req.user.uid);
+            if (currentUserIdsInBatch.length === 0) {
+                // No IDs in the batch match the current user, or none were provided that match.
+                return res.json({ 
+                    successCount: 0, 
+                    errors: ids.map(id => ({ id, error: 'Not authorized or not your own user ID' })) 
+                });
+            }
+            deleteFilter.id = { $in: currentUserIdsInBatch };
+            idsToConsiderForDeletion = currentUserIdsInBatch; // We only care about these for success/error reporting
+        }
+
+        const result = await Model.deleteMany(deleteFilter);
         const successCount = result.deletedCount || 0;
-        // If you want to know which IDs were not found, you can optionally fetch missing ones:
         let errors = [];
-        if (successCount !== ids.length) {
-            // Optional: Find which IDs were not deleted (i.e., not found)
-            const foundDocs = await Model.find({ id: { $in: ids } }).select('id');
+
+        if (successCount !== idsToConsiderForDeletion.length) {
+            // To find which IDs were not deleted (among those we attempted to delete):
+            // We need to query with the same filter criteria used for deletion attempt.
+            const findFilterForMissing = { ...deleteFilter };
+            const foundDocs = await Model.find(findFilterForMissing).select('id');
             const foundIds = foundDocs.map(doc => doc.id);
-            const notFoundIds = ids.filter(id => !foundIds.includes(id));
-            errors = notFoundIds.map(id => ({ id, error: 'Not found' }));
+            const notFoundOrAuthorizedIds = idsToConsiderForDeletion.filter(id => !foundIds.includes(id));
+            errors = notFoundOrAuthorizedIds.map(id => ({ id, error: 'Not found or not authorized' }));
         }
 
         return res.json({ successCount, errors });
@@ -403,12 +450,22 @@ router.delete('/:collectionName/:id', async (req, res) => {
     try {
         const collectionName = req.params.collectionName;
         const Model = getDynamicModel(collectionName);
-        const deletedDocument = await Model.findOneAndDelete({
-            id: req.params.id,
-        });
+        let queryFilter = { id: req.params.id };
+
+        if (collectionName !== 'users') {
+            queryFilter.userId = req.user.uid;
+        } else {
+            // For 'users' collection, user can only delete their own document.
+            if (req.params.id !== req.user.uid) {
+                return res.status(403).json({ msg: 'Forbidden: You can only delete your own user document.' });
+            }
+            // queryFilter is already { id: req.params.id }, which is validated to be req.user.uid
+        }
+
+        const deletedDocument = await Model.findOneAndDelete(queryFilter);
 
         if (!deletedDocument) {
-            return res.status(404).json({ msg: 'Document not found' });
+            return res.status(404).json({ msg: 'Document not found or you are not authorized to delete it' });
         }
         res.status(204).send();
     } catch (err) {
@@ -419,6 +476,5 @@ router.delete('/:collectionName/:id', async (req, res) => {
         res.status(500).send('Server Error');
     }
 });
-
 
 module.exports = router;

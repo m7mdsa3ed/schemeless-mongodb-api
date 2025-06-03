@@ -1,4 +1,5 @@
 const admin = require('firebase-admin');
+const { getDynamicModel } = require('../lib/getDynamicModel');
 
 // Initialize Firebase Admin with service account from environment variables
 const initializeFirebase = () => {
@@ -33,11 +34,14 @@ const authMiddleware = async (req, res, next) => {
     // Verify the token
     const decodedToken = await admin.auth().verifyIdToken(token);
 
+    const ourUser = await getDynamicModel('users').findOne({ id: decodedToken.uid });
+
     // Add user info to request object
     req.user = {
       uid: decodedToken.uid,
       email: decodedToken.email,
-      email_verified: decodedToken.email_verified
+      email_verified: decodedToken.email_verified,
+      plan: ourUser.plan || 'free'
     };
 
     next();

@@ -1,10 +1,17 @@
 const config = require('../config');
+const { getDynamicModel } = require('../lib/getDynamicModel');
 
 // Import authentication handlers
 const firebaseAuth = config.authType === 'firebase' ? require('./firebaseAuth') : null;
 const localAuth = config.authType === 'local' ? require('./localAuth') : null;
 
 const authMiddleware = async (req, res, next) => {
+  if (config.authType === 'none') {
+    const firstUser = await getDynamicModel('users').findOne();
+    req.user = { uid: firstUser.id, email: firstUser.email };
+    return next();
+  }
+
   try {
     // Check if authorization header exists
     const authHeader = req.headers.authorization;

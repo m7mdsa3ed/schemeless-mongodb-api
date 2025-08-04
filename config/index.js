@@ -42,6 +42,8 @@ const validateConfig = () => {
     if (!config.jwtSecret) {
       errors.push('JWT_SECRET is required when AUTH_TYPE=local');
     }
+  } else if (config.authType === 'none') {
+    // No additional configuration required
   } else {
     errors.push('AUTH_TYPE must be either "firebase" or "local"');
   }

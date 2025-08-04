@@ -106,6 +106,10 @@ if (config.authType === 'local') {
         });
       }
 
+      // Update last login timestamp
+      user.lastLogin = new Date();
+      await user.save();
+
       // Generate JWT token
       const token = jwt.sign(
         { uid: user.id, email: user.email },
@@ -121,7 +125,8 @@ if (config.authType === 'local') {
           email: user.email,
           name: user.name,
           email_verified: user.email_verified,
-          plan: user.plan
+          plan: user.plan,
+          lastLogin: user.lastLogin
         }
       });
     } catch (error) {
@@ -153,7 +158,8 @@ router.get('/me', require('../middlewares/authMiddleware'), async (req, res) => 
       email: user.email,
       name: user.name,
       email_verified: user.email_verified,
-      plan: user.plan
+      plan: user.plan,
+      lastLogin: user.lastLogin || null
     });
   } catch (error) {
     console.error('Get User Error:', error);

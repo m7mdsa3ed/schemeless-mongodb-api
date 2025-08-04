@@ -316,6 +316,11 @@ router.post('/:collectionName', limitsMiddleware, async (req, res) => {
     try {
         const collectionName = req.params.collectionName;
         const Model = getDynamicModel(collectionName);
+
+        if (!req.body.userId) {
+            req.body.userId = req.user.uid;
+        }
+
         const newDocument = new Model(req.body);
         await newDocument.save();
         res.status(201).json(newDocument);
@@ -341,7 +346,15 @@ router.post('/:collectionName/batch', limitsMiddleware, async (req, res) => {
             return res.status(400).json({ msg: 'Request body array cannot be empty.' });
         }
 
-        const newDocuments = await Model.insertMany(req.body, { ordered: false }); // ordered: false allows other valid operations to continue if one fails
+        const documents = req.body.map(doc => {
+            if (!doc.userId) {
+                doc.userId = req.user.uid;
+            }
+
+            return doc;
+        });
+
+        const newDocuments = await Model.insertMany(documents, { ordered: false }); // ordered: false allows other valid operations to continue if one fails
         res.status(201).json(newDocuments);
     } catch (err) {
         console.error("Batch write error:", err.message);

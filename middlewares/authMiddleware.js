@@ -1,21 +1,8 @@
-const admin = require('firebase-admin');
-const { getDynamicModel } = require('../lib/getDynamicModel');
+const config = require('../config');
 
-// Initialize Firebase Admin with service account from environment variables
-const initializeFirebase = () => {
-  if (!admin.apps.length) {
-    admin.initializeApp({
-      credential: admin.credential.cert(process.env.FIREBASE_CREDENTIALS ? JSON.parse(process.env.FIREBASE_CREDENTIALS) : {
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') // Handle newlines in private key
-      }),
-    }) 
-  }
-};
-
-// Initialize Firebase when the middleware is first loaded
-initializeFirebase();
+// Import authentication handlers
+const firebaseAuth = config.authType === 'firebase' ? require('./firebaseAuth') : null;
+const localAuth = config.authType === 'local' ? require('./localAuth') : null;
 
 const authMiddleware = async (req, res, next) => {
   try {
@@ -31,18 +18,21 @@ const authMiddleware = async (req, res, next) => {
     // Extract the token
     const token = authHeader.split('Bearer ')[1];
 
-    // Verify the token
-    const decodedToken = await admin.auth().verifyIdToken(token);
-
-    const ourUser = await getDynamicModel('users').findOne({ id: decodedToken.uid });
+    // Verify the token based on authentication type
+    let userInfo;
+    if (config.authType === 'firebase' && firebaseAuth) {
+      userInfo = await firebaseAuth(token);
+    } else if (config.authType === 'local' && localAuth) {
+      userInfo = await localAuth(token);
+    } else {
+      return res.status(500).json({
+        error: 'Internal Server Error',
+        message: 'Invalid authentication type configured'
+      });
+    }
 
     // Add user info to request object
-    req.user = {
-      uid: decodedToken.uid,
-      email: decodedToken.email,
-      email_verified: decodedToken.email_verified,
-      plan: ourUser.plan || 'free'
-    };
+    req.user = userInfo;
 
     next();
   } catch (error) {

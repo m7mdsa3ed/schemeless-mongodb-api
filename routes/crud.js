@@ -428,9 +428,9 @@ router.delete('/:collectionName/batch', async (req, res) => {
             const currentUserIdsInBatch = ids.filter(id => id === req.user.uid);
             if (currentUserIdsInBatch.length === 0) {
                 // No IDs in the batch match the current user, or none were provided that match.
-                return res.json({ 
-                    successCount: 0, 
-                    errors: ids.map(id => ({ id, error: 'Not authorized or not your own user ID' })) 
+                return res.json({
+                    successCount: 0,
+                    errors: ids.map(id => ({ id, error: 'Not authorized or not your own user ID' }))
                 });
             }
             deleteFilter.id = { $in: currentUserIdsInBatch };
@@ -454,6 +454,56 @@ router.delete('/:collectionName/batch', async (req, res) => {
         return res.json({ successCount, errors });
     } catch (err) {
         console.error('Batch delete error:', err.message);
+        res.status(500).json({ msg: 'Server Error' });
+    }
+});
+
+// PATCH update a specific path in a document (e.g., add to array)
+router.patch('/:collectionName/:id/path', async (req, res) => {
+    try {
+        const { collectionName, id } = req.params;
+        const { path, data, operation = 'push' } = req.body;
+
+        // --- 1. Authorization (Query Filtering) ---
+
+        // It's standard practice to use MongoDB's `_id`. If you use a custom `id`, replace `_id` below.
+        const queryFilter = { id };
+
+        if (collectionName !== 'users') {
+            // User can only update documents they own in other collections.
+            queryFilter.userId = req.user.uid; // Assumes user ID is on the doc
+        } else {
+            // For 'users' collection, user can only update their own document.
+            if (id !== req.user.uid) {
+                return res.status(403).json({ msg: 'Forbidden: You can only update your own user document.' });
+            }
+        }
+
+        // --- 2. Build Update Operation (Generic and DRY) ---
+        // The special `commentIndex` logic is removed. The client should provide the full path.
+        // For example: "comments.3.replies"
+        const updateOperation = {
+            [`$${operation}`]: { [path]: data }
+        };
+
+        // --- 3. Execute Database Query ---
+
+        const Model = getDynamicModel(collectionName);
+        const updatedDocument = await Model.findOneAndUpdate(
+            queryFilter,
+            updateOperation,
+            { new: true } // `new: true` returns the updated doc, `runValidators` ensures schema rules are met
+        );
+
+        if (!updatedDocument) {
+            return res.status(404).json({ msg: 'Document not found or you are not authorized to modify it.' });
+        }
+
+        res.json(updatedDocument);
+
+    } catch (err) {
+        console.error('Batch delete error:', err.message);
+
         res.status(500).json({ msg: 'Server Error' });
     }
 });

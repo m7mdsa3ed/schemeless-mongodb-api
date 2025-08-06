@@ -15,7 +15,7 @@ app.use(cors());
 connectDB();
 
 // Init Middleware (Body Parser)
-app.use(express.json({ extended: false })); // Allows us to get data in req.body
+app.use(express.json({ extended: false, limit: "50mb" })); // Allows us to get data in req.body
 
 // Define Routes
 app.use('/api/auth', authRoutes); // Authentication endpoints

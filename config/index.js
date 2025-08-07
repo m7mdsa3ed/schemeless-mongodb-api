@@ -27,6 +27,50 @@ const config = {
   protectedCollections: process.env.PROTECTED_COLLECTIONS ?
     process.env.PROTECTED_COLLECTIONS.split(',').map(name => name.trim()) :
     [],
+
+  // File Upload Configuration
+  fileUpload: {
+    // Storage provider: 'local', 'cloudinary', 's3'
+    provider: process.env.FILE_UPLOAD_PROVIDER || 'local',
+
+    // Local Storage Configuration
+    local: {
+      uploadPath: process.env.LOCAL_UPLOAD_PATH || './uploads',
+      baseUrl: process.env.LOCAL_BASE_URL || `http://localhost:${process.env.PORT || 5000}`,
+    },
+
+    // Cloudinary Configuration
+    cloudinary: {
+      cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+      apiKey: process.env.CLOUDINARY_API_KEY,
+      apiSecret: process.env.CLOUDINARY_API_SECRET,
+      folder: process.env.CLOUDINARY_FOLDER || 'uploads',
+      resourceType: process.env.CLOUDINARY_RESOURCE_TYPE || 'auto',
+      secure: process.env.CLOUDINARY_SECURE !== 'false',
+    },
+
+    // AWS S3 Configuration (for future implementation)
+    s3: {
+      region: process.env.AWS_S3_REGION,
+      bucket: process.env.AWS_S3_BUCKET,
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    },
+
+    // General Upload Settings
+    maxFileSize: process.env.MAX_FILE_SIZE ? parseInt(process.env.MAX_FILE_SIZE) : 10 * 1024 * 1024, // 10MB default
+    allowedMimeTypes: process.env.ALLOWED_MIME_TYPES ? process.env.ALLOWED_MIME_TYPES.split(',') : [
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/gif',
+      'image/webp',
+      'application/pdf',
+      'text/plain',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    ],
+  },
 };
 
 // Validate required configuration

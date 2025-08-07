@@ -1,9 +1,11 @@
 // app.js
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const connectDB = require('./config/db');
 const crudRoutes = require('./routes/crud');
 const authRoutes = require('./routes/auth');
+const uploadRoutes = require('./routes/upload');
 const config = require('./config');
 
 const app = express();
@@ -17,8 +19,16 @@ connectDB();
 // Init Middleware (Body Parser)
 app.use(express.json({ extended: false })); // Allows us to get data in req.body
 
+// Serve static files from uploads directory (for local storage)
+if (config.fileUpload.provider === 'local') {
+  const uploadPath = path.resolve(config.fileUpload.local.uploadPath);
+  app.use('/uploads', express.static(uploadPath));
+  console.log(`Serving static files from: ${uploadPath}`);
+}
+
 // Define Routes
 app.use('/api/auth', authRoutes); // Authentication endpoints
+app.use('/api/upload', uploadRoutes); // File upload endpoints
 app.use('/api', crudRoutes); // All CRUD operations will be under /api/:collectionName
 
 // Global error handler for auth errors

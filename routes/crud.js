@@ -3,9 +3,9 @@ const express = require('express');
 const authMiddleware = require('../middlewares/authMiddleware');
 const limitsMiddleware = require('../middlewares/limitsMiddleware');
 const { getDynamicModel } = require('../lib/getDynamicModel');
+const config = require('../config');
 const router = express.Router();
 
-// Apply authentication middleware to all routes
 router.use(authMiddleware);
 
 // Helper to parse a structured JSON query parameter into Mongoose filter and options

@@ -5,13 +5,13 @@ const config = {
   // Server Configuration
   port: process.env.PORT || 5000,
   nodeEnv: process.env.NODE_ENV || 'development',
-  
+
   // Database Configuration
   mongoUri: process.env.MONGO_URI,
-  
+
   // Authentication Configuration
   authType: process.env.AUTH_TYPE || 'firebase',
-  
+
   // Firebase Authentication Configuration
   firebase: {
     credentials: process.env.FIREBASE_CREDENTIALS ? JSON.parse(process.env.FIREBASE_CREDENTIALS) : null,
@@ -19,20 +19,25 @@ const config = {
     clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
     privateKey: process.env.FIREBASE_PRIVATE_KEY ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') : null,
   },
-  
+
   // Local Authentication Configuration
   jwtSecret: process.env.JWT_SECRET,
+
+  // Collection Protection Configuration
+  protectedCollections: process.env.PROTECTED_COLLECTIONS ?
+    process.env.PROTECTED_COLLECTIONS.split(',').map(name => name.trim()) :
+    [],
 };
 
 // Validate required configuration
 const validateConfig = () => {
   const errors = [];
-  
+
   // Validate database configuration
   if (!config.mongoUri) {
     errors.push('MONGO_URI is required');
   }
-  
+
   // Validate authentication configuration based on auth type
   if (config.authType === 'firebase') {
     if (!config.firebase.credentials && (!config.firebase.projectId || !config.firebase.clientEmail || !config.firebase.privateKey)) {
@@ -47,7 +52,7 @@ const validateConfig = () => {
   } else {
     errors.push('AUTH_TYPE must be either "firebase" or "local"');
   }
-  
+
   if (errors.length > 0) {
     console.error('Configuration validation failed:');
     errors.forEach(error => console.error(`- ${error}`));

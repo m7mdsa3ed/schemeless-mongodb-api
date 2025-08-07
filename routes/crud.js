@@ -3,10 +3,25 @@ const express = require('express');
 const authMiddleware = require('../middlewares/authMiddleware');
 const limitsMiddleware = require('../middlewares/limitsMiddleware');
 const { getDynamicModel } = require('../lib/getDynamicModel');
+const config = require('../config');
 const router = express.Router();
 
-// Apply authentication middleware to all routes
-router.use(authMiddleware);
+// Apply authentication middleware conditionally based on collection protection settings
+router.use(async (req, res, next) => {
+    // Check if the current collection requires authentication
+    const collectionName = req.params.collectionName;
+    const isCollectionProtected = config.protectedCollections && config.protectedCollections.includes(collectionName);
+
+    // If collection is not in protected list, skip authentication middleware
+    if (!isCollectionProtected) {
+        const firstUser = await getDynamicModel('users').findOne();
+        req.user = { uid: firstUser.id, email: firstUser.email };
+        return next();
+    }
+
+    // Otherwise, apply authentication middleware
+    return authMiddleware(req, res, next);
+});
 
 // Helper to parse a structured JSON query parameter into Mongoose filter and options
 // This function now expects a JSON string like:

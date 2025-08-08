@@ -11,6 +11,7 @@ const connectDB = async () => {
     }
 
     try {
+        const startTime = Date.now();
         const options = {
             maxPoolSize: 5, // ✅ Safe for free-tier MongoDB
             serverSelectionTimeoutMS: 5000,
@@ -21,8 +22,11 @@ const connectDB = async () => {
 
         await mongoose.connect(config.mongoUri, options);
         
+        const endTime = Date.now();
+        const connectionTime = endTime - startTime;
+        
         isConnected = true;
-        console.log('MongoDB Connected...');
+        console.log(`MongoDB Connected in ${connectionTime}ms`);
         
         // Handle connection events
         mongoose.connection.on('error', (err) => {

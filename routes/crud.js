@@ -15,7 +15,8 @@ router.use(authMiddleware);
 //     { "field": "age", "operator": ">", "value": 25 },
 //     { "field": "isActive", "operator": "==", "value": true },
 //     { "field": "tags", "operator": "array-contains", "value": "nodejs" },
-//     { "field": "status", "operator": "in", "value": ["active", "pending"] }
+//     { "field": "status", "operator": "in", "value": ["active", "pending"] },
+//     { "field": "name", "operator": "like", "value": "john" } // Like search for partial matches
 //   ],
 //   "orderByField": "age",
 //   "orderDirection": "asc",
@@ -37,7 +38,7 @@ const parseStructuredQuery = (jsonQueryString, userId) => {
 
     const {
         conditions = [],
-        orderByField = '_id',
+        orderByField = 'id',
         orderDirection = 'desc',
         limitCount = null,
         offsetCount = null, // Handle offset
@@ -58,6 +59,7 @@ const parseStructuredQuery = (jsonQueryString, userId) => {
         'array-contains-any': '$in', // Special handling for multiple array elements
         'exists': '$exists', // field exists (value true/false)
         'regex': '$regex', // regex match (value is pattern, can add options)
+        'like': '$regex', // like search (value is pattern, automatically adds wildcards and case-insensitive)
     };
 
     // Initialize field conditions map to track multiple conditions per field
@@ -65,6 +67,11 @@ const parseStructuredQuery = (jsonQueryString, userId) => {
 
     for (const condition of conditions) {
         let { field, operator, value } = condition;
+
+        console.log({
+            condition
+        });
+        
 
         if (field == 'userId') {
             // Special case for userId, use req.user.uid
@@ -110,6 +117,13 @@ const parseStructuredQuery = (jsonQueryString, userId) => {
                     [mongooseOp]: processedValue,
                     $options: 'i'
                 };
+            } else if (operator === 'like') {
+                // For like operator, convert to regex with wildcards and case-insensitive
+                const regexPattern = processedValue.replace(/([.?*+^$[\]\\(){}|])/g, '\\$1');
+                fieldConditions[field] = {
+                    [mongooseOp]: `.*${regexPattern}.*`,
+                    $options: 'i'
+                };
             } else if (operator === '==') {
                 // For equality, only override if no other conditions exist
                 if (Object.keys(fieldConditions[field]).length === 0) {
@@ -148,6 +162,11 @@ const parseStructuredQuery = (jsonQueryString, userId) => {
         options.skip = parseInt(offsetCount);
     }
 
+
+    console.log({
+        filter, options
+    });
+    
     return { filter, options };
 };
 

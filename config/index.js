@@ -65,6 +65,7 @@ const config = {
       'image/png',
       'image/gif',
       'image/webp',
+      'image/avif',
       'application/pdf',
       'text/plain',
       'application/msword',

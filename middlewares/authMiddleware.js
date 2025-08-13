@@ -6,17 +6,6 @@ const firebaseAuth = config.authType === 'firebase' ? require('./firebaseAuth') 
 const localAuth = config.authType === 'local' ? require('./localAuth') : null;
 
 const authMiddleware = async (req, res, next) => {
-  // Check if the current collection requires authentication
-  const collectionName = req.params.collectionName;
-  const isCollectionProtected = config.protectedCollections && config.protectedCollections.includes(collectionName);
-
-  // If collection is not in protected list, skip authentication middleware
-  if (!isCollectionProtected) {
-    const firstUser = await getDynamicModel('users').findOne();
-    req.user = { uid: firstUser.id, email: firstUser.email };
-    return next();
-  }
-
   if (config.authType === 'none') {
     const firstUser = await getDynamicModel('users').findOne();
     req.user = { uid: firstUser.id, email: firstUser.email };

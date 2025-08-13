@@ -68,11 +68,6 @@ const parseStructuredQuery = (jsonQueryString, userId) => {
     for (const condition of conditions) {
         let { field, operator, value } = condition;
 
-        console.log({
-            condition
-        });
-        
-
         if (field == 'userId') {
             // Special case for userId, use req.user.uid
             value = userId; // Use authenticated user's UID
@@ -162,11 +157,6 @@ const parseStructuredQuery = (jsonQueryString, userId) => {
         options.skip = parseInt(offsetCount);
     }
 
-
-    console.log({
-        filter, options
-    });
-    
     return { filter, options };
 };
 

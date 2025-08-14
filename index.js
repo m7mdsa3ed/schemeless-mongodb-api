@@ -6,6 +6,7 @@ const connectDB = require('./config/db');
 const crudRoutes = require('./routes/crud');
 const authRoutes = require('./routes/auth');
 const uploadRoutes = require('./routes/upload');
+const functionRoutes = require('./routes/functions');
 const config = require('./config');
 
 const app = express();
@@ -14,7 +15,10 @@ const app = express();
 app.use(cors());
 
 // Connect Database
-connectDB();
+connectDB().then(dbConnection => {
+  // Make the database connection available to the app
+  app.set('dbConnection', dbConnection);
+});
 
 // Init Middleware (Body Parser)
 app.use(express.json({ extended: false, limit: "50mb" })); // Allows us to get data in req.body
@@ -29,6 +33,7 @@ if (config.fileUpload.provider === 'local') {
 // Define Routes
 app.use('/api/auth', authRoutes); // Authentication endpoints
 app.use('/api/upload', uploadRoutes); // File upload endpoints
+app.use('/api/functions', functionRoutes); // Function management and execution
 app.use('/api', crudRoutes); // All CRUD operations will be under /api/:collectionName
 
 // Global error handler for auth errors

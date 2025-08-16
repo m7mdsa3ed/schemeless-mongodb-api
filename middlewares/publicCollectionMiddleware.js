@@ -22,7 +22,7 @@ const publicCollectionMiddleware = (req, res, next) => {
   }
   
   // Check if the collection is in the protected collections list
-  const isProtected = config.protectedCollections.includes(collectionName);
+  const isProtected = config.protectedCollections.includes('*') || config.protectedCollections.includes(collectionName);
   
   // If the collection is not protected, it's considered public
   if (!isProtected) {

@@ -1,11 +1,14 @@
 // routes/crud.js
 const express = require('express');
 const authMiddleware = require('../middlewares/authMiddleware');
+const publicCollectionMiddleware = require('../middlewares/publicCollectionMiddleware');
 const limitsMiddleware = require('../middlewares/limitsMiddleware');
 const { getDynamicModel } = require('../lib/getDynamicModel');
 const config = require('../config');
 const router = express.Router();
 
+// Apply public collection middleware before auth middleware
+router.use(publicCollectionMiddleware);
 router.use(authMiddleware);
 
 // Helper to parse a structured JSON query parameter into Mongoose filter and options
@@ -234,13 +237,13 @@ router.get('/:collectionName', async (req, res) => {
             }
         }
 
-        if (collectionName !== 'users') {
-            filter.userId ??= req.user.uid; // Ensures userId is set if not provided in query for other collections
-        } else {
-            // For the 'users' collection, always restrict to the current user's document.
-            // This overrides any 'id' potentially set in the query by parseStructuredQuery if it was for another user.
-            filter.id = req.user.uid;
-        }
+        // if (collectionName !== 'users') {
+        //     filter.userId ??= req.user.uid; // Ensures userId is set if not provided in query for other collections
+        // } else {
+        //     // For the 'users' collection, always restrict to the current user's document.
+        //     // This overrides any 'id' potentially set in the query by parseStructuredQuery if it was for another user.
+        //     filter.id = req.user.uid;
+        // }
 
         let pipeline = [];
 
@@ -295,14 +298,14 @@ router.get('/:collectionName/:id', async (req, res) => {
         const Model = getDynamicModel(collectionName);
         let queryFilter = { id: req.params.id };
 
-        if (collectionName !== 'users') {
-            queryFilter.userId = req.user.uid;
-        } else {
-            // For 'users' collection, user can only get their own document.
-            if (req.params.id !== req.user.uid) {
-                return res.status(403).json({ msg: 'Forbidden: You can only access your own user document.' });
-            }
-        }
+        // if (collectionName !== 'users') {
+        //     queryFilter.userId = req.user.uid;
+        // } else {
+        //     // For 'users' collection, user can only get their own document.
+        //     if (req.params.id !== req.user.uid) {
+        //         return res.status(403).json({ msg: 'Forbidden: You can only access your own user document.' });
+        //     }
+        // }
 
         const document = await Model.findOne(queryFilter);
 
@@ -326,9 +329,9 @@ router.post('/:collectionName', limitsMiddleware, async (req, res) => {
         const collectionName = req.params.collectionName;
         const Model = getDynamicModel(collectionName);
 
-        if (!req.body.userId) {
-            req.body.userId = req.user.uid;
-        }
+        // if (!req.body.userId) {
+        //     req.body.userId = req.user.uid;
+        // }
 
         const newDocument = new Model(req.body);
         await newDocument.save();
@@ -356,9 +359,9 @@ router.post('/:collectionName/batch', limitsMiddleware, async (req, res) => {
         }
 
         const documents = req.body.map(doc => {
-            if (!doc.userId) {
-                doc.userId = req.user.uid;
-            }
+            // if (!doc.userId) {
+            //     doc.userId = req.user.uid;
+            // }
 
             return doc;
         });
@@ -386,15 +389,15 @@ router.put('/:collectionName/:id', async (req, res) => {
         const Model = getDynamicModel(collectionName);
         let queryFilter = { id: req.params.id };
 
-        if (collectionName !== 'users') {
-            queryFilter.userId = req.user.uid;
-        } else {
-            // For 'users' collection, user can only update their own document.
-            if (req.params.id !== req.user.uid) {
-                return res.status(403).json({ msg: 'Forbidden: You can only update your own user document.' });
-            }
-            // queryFilter is already { id: req.params.id }, which is validated to be req.user.uid
-        }
+        // if (collectionName !== 'users') {
+        //     queryFilter.userId = req.user.uid;
+        // } else {
+        //     // For 'users' collection, user can only update their own document.
+        //     if (req.params.id !== req.user.uid) {
+        //         return res.status(403).json({ msg: 'Forbidden: You can only update your own user document.' });
+        //     }
+        //     // queryFilter is already { id: req.params.id }, which is validated to be req.user.uid
+        // }
 
         const updatedDocument = await Model.findOneAndUpdate(
             queryFilter,
@@ -478,15 +481,15 @@ router.patch('/:collectionName/:id/path', async (req, res) => {
         // It's standard practice to use MongoDB's `_id`. If you use a custom `id`, replace `_id` below.
         const queryFilter = { id };
 
-        if (collectionName !== 'users') {
-            // User can only update documents they own in other collections.
-            queryFilter.userId = req.user.uid; // Assumes user ID is on the doc
-        } else {
-            // For 'users' collection, user can only update their own document.
-            if (id !== req.user.uid) {
-                return res.status(403).json({ msg: 'Forbidden: You can only update your own user document.' });
-            }
-        }
+        // if (collectionName !== 'users') {
+        //     // User can only update documents they own in other collections.
+        //     queryFilter.userId = req.user.uid; // Assumes user ID is on the doc
+        // } else {
+        //     // For 'users' collection, user can only update their own document.
+        //     if (id !== req.user.uid) {
+        //         return res.status(403).json({ msg: 'Forbidden: You can only update your own user document.' });
+        //     }
+        // }
 
         // --- 2. Build Update Operation (Generic and DRY) ---
         // The special `commentIndex` logic is removed. The client should provide the full path.

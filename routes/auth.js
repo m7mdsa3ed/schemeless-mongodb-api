@@ -122,11 +122,7 @@ if (config.authType === 'local') {
         token,
         user: {
           uid: user.id,
-          email: user.email,
-          name: user.name,
-          email_verified: user.email_verified,
-          plan: user.plan,
-          lastLogin: user.lastLogin
+          ...user
         }
       });
     } catch (error) {

@@ -6,9 +6,14 @@ const firebaseAuth = config.authType === 'firebase' ? require('./firebaseAuth') 
 const localAuth = config.authType === 'local' ? require('./localAuth') : null;
 
 const authMiddleware = async (req, res, next) => {
+  // Skip authentication if we have a public user (set by publicCollectionMiddleware)
+  if (req.user && req.user.uid === 'public-user') {
+    return next();
+  }
+  
   if (config.authType === 'none') {
-    const firstUser = await getDynamicModel('users').findOne();
-    req.user = { uid: firstUser.id, email: firstUser.email };
+    // const firstUser = await getDynamicModel('users').findOne();
+    // req.user = { uid: firstUser.id, email: firstUser.email };
     return next();
   }
 

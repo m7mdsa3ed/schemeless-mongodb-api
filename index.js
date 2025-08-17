@@ -8,6 +8,7 @@ const authRoutes = require('./routes/auth');
 const uploadRoutes = require('./routes/upload');
 const functionRoutes = require('./routes/functions');
 const config = require('./config');
+const notificationService = require('./services/notificationService');
 
 const app = express();
 
@@ -30,6 +31,14 @@ if (config.fileUpload.provider === 'local') {
   console.log(`Serving static files from: ${uploadPath}`);
 }
 
+
+app.use('/test', async (req, res) => {
+  notificationService.sendNotification([
+    "e-_X84UsfHV8HrVr_M-I9B:APA91bH1CtIHog8rRH5SdxmTzHhJ-REKnG0izlbdKM1-f7tXwkNBD0IfaJ1dgJ_NgkRVLa9N8TCjCGNc_KVLjKPBpVOAw53Xr3I_eps7eVsWBT0ojIPE8tc"
+  ], 'te22st', 'tes22t', { test: 'test222' });
+
+  res.json({ test: 'test' });
+})
 // Define Routes
 app.use('/api/auth', authRoutes); // Authentication endpoints
 app.use('/api/upload', uploadRoutes); // File upload endpoints

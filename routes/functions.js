@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middlewares/authMiddleware');
 const { getDynamicModel } = require('../lib/getDynamicModel');
+const notificationService = require('../services/notificationService');
 
 // Apply authentication middleware to all routes in this file
 router.use(authMiddleware);
@@ -80,7 +81,7 @@ router.post('/:name/execute', async (req, res) => {
     // Execute the function directly (without isolation for now)
     try {
       // Create an async function from the code string to support await and args
-      const userFunction = new Function('console', 'db', 'args', 'getDynamicModel', `
+      const userFunction = new Function('console', 'db', 'args', 'getDynamicModel', 'notificationService', `
         return (async () => {
           try {
             // Create a function from the user's code and apply it with the provided args
@@ -94,7 +95,7 @@ router.post('/:name/execute', async (req, res) => {
       `);
 
       // Execute the async function with the provided arguments
-      const result = await userFunction(console, dbConnection, args, getDynamicModel);
+      const result = await userFunction(console, dbConnection, args, getDynamicModel, notificationService);
       
       console.log(result);
       

@@ -26,9 +26,13 @@ const publicCollectionMiddleware = (req, res, next) => {
   
   // If the collection is not protected, it's considered public
   if (!isProtected) {
-    // For public collections, we'll skip authentication by creating a dummy user object
-    // This allows the request to continue without auth middleware
-    req.user = { uid: 'public-user' };
+    // If no token is present, we create a dummy user to bypass auth
+    // If a token IS present, we do nothing, and let the authMiddleware handle it
+    if (!req.headers.authorization) {
+      // For public collections, we'll skip authentication by creating a dummy user object
+      // This allows the request to continue without auth middleware
+      req.user = { uid: 'public-user' };
+    }
   }
   
   next();

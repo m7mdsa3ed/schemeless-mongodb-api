@@ -29,7 +29,6 @@ const publicCollectionMiddleware = (req, res, next) => {
     // For public collections, we'll skip authentication by creating a dummy user object
     // This allows the request to continue without auth middleware
     req.user = { uid: 'public-user' };
-    console.log(`Public collection access: ${collectionName}`);
   }
   
   next();

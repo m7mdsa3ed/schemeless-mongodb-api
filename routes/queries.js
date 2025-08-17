@@ -107,26 +107,9 @@ router.post('/:name/execute', async (req, res) => {
       // Execute the aggregation pipeline
       const query = Model.aggregate(executionPipeline);
       const result = await query.exec();
-      
-      // Get total count if requested
-      let total = null;
-      if (options.includeTotal) {
-        // Build a count pipeline by removing $sort, $skip, $limit and adding $count
-        const countPipeline = executionPipeline
-          .filter(stage => !['$sort', '$skip', '$limit'].includes(Object.keys(stage)[0]))
-          .concat([{ $count: 'total' }]);
-        
-        const countResult = await Model.aggregate(countPipeline).exec();
-        total = countResult.length > 0 ? countResult[0].total : result.length;
-      }
 
       res.json({ 
         result,
-        metadata: {
-          total,
-          executedPipeline: executionPipeline,
-          queryName: queryToExecute.name
-        }
       });
     } catch (error) {
       console.error('Error executing query:', error);

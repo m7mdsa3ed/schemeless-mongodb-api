@@ -552,4 +552,43 @@ router.delete('/:collectionName/:id', async (req, res) => {
     }
 });
 
+// POST execute a custom aggregation pipeline on a collection
+// Example: POST /api/orders/pipe
+// Body: { "pipeline": [ { $match: { status: "completed" } }, { $group: { _id: null, total: { $sum: "$amount" } } } ] }
+router.post('/:collectionName/pipe', async (req, res) => {
+    try {
+        const collectionName = req.params.collectionName;
+        const { pipeline, options = {} } = req.body;
+
+        if (!Array.isArray(pipeline)) {
+            return res.status(400).json({ msg: 'Pipeline must be an array of aggregation stages.' });
+        }
+
+        const Model = getDynamicModel(collectionName);
+
+        // Execute the aggregation pipeline
+        const query = Model.aggregate(pipeline);
+        
+        // Apply options like sort, skip, limit if provided
+        if (options.sort) {
+            query.sort(options.sort);
+        }
+        if (options.skip) {
+            query.skip(options.skip);
+        }
+        if (options.limit) {
+            query.limit(options.limit);
+        }
+
+        const result = await query.exec();
+
+        res.json({
+            result,
+        });
+    } catch (err) {
+        console.error('Pipeline execution error:', err.message);
+        res.status(500).json({ msg: 'Server Error', error: err.message });
+    }
+});
+
 module.exports = router;

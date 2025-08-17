@@ -1,11 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const authMiddleware = require('../middlewares/authMiddleware');
 const { getDynamicModel } = require('../lib/getDynamicModel');
-const notificationService = require('../services/notificationService');
-
-// Apply authentication middleware to all routes in this file
-router.use(authMiddleware);
 
 // Define the collection name for storing queries
 const QUERY_COLLECTION = 'database_queries';

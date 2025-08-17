@@ -527,16 +527,6 @@ router.delete('/:collectionName/:id', async (req, res) => {
         const Model = getDynamicModel(collectionName);
         let queryFilter = { id: req.params.id };
 
-        if (collectionName !== 'users') {
-            queryFilter.userId = req.user.uid;
-        } else {
-            // For 'users' collection, user can only delete their own document.
-            if (req.params.id !== req.user.uid) {
-                return res.status(403).json({ msg: 'Forbidden: You can only delete your own user document.' });
-            }
-            // queryFilter is already { id: req.params.id }, which is validated to be req.user.uid
-        }
-
         const deletedDocument = await Model.findOneAndDelete(queryFilter);
 
         if (!deletedDocument) {

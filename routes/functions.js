@@ -29,13 +29,16 @@ router.post('/', async (req, res) => {
     const existingFunction = await FunctionModel.findOne({ name });
     if (existingFunction) {
       // Update existing function
-      existingFunction.code = code;
-      existingFunction.description = description;
-      existingFunction.parameters = parameters;
-      existingFunction.updatedAt = new Date();
+      existingFunction.set({
+        code,
+        description,
+        parameters,
+        updatedAt: new Date()
+      });
       
-      await existingFunction.save();
-      return res.status(200).json(existingFunction);
+      const updatedFunction = await existingFunction.save();
+      console.log('Function updated:', updatedFunction);
+      return res.status(200).json(updatedFunction);
     }
 
     const newFunction = new FunctionModel({
@@ -96,8 +99,6 @@ router.post('/:name/execute', async (req, res) => {
 
       // Execute the async function with the provided arguments
       const result = await userFunction(console, dbConnection, args, getDynamicModel, notificationService);
-      
-      console.log(result);
       
       res.json({ result });
     } catch (error) {

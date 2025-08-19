@@ -9,13 +9,6 @@ const publicCollectionMiddleware = (req, res, next) => {
   const collectionName = req.params.collectionName ||
                         (req.path.split('/').filter(Boolean).pop());
   
-  console.log({
-    collectionName,
-    params: req.params,
-    path: req.path,
-    method: req.method
-  });
-  
   // Only apply this logic for GET requests and if we have a collection name
   if (req.method !== 'GET' || !collectionName) {
     return next();

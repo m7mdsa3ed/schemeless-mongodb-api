@@ -33,7 +33,7 @@ const parseStructuredQuery = (jsonQueryString, userId) => {
     let parsedQuery;
 
     try {
-        parsedQuery = JSON.parse(jsonQueryString);
+        parsedQuery = typeof jsonQueryString === 'string' ? JSON.parse(jsonQueryString) : jsonQueryString;
     } catch (e) {
         console.error("Failed to parse query JSON:", e);
         throw new Error("Invalid query JSON format.");
@@ -46,7 +46,8 @@ const parseStructuredQuery = (jsonQueryString, userId) => {
         limitCount = null,
         offsetCount = null, // Handle offset
         startAfter = null, // New: for pagination cursor as skip count,
-        sortObject = null
+        sortObject = null,
+        populate = null,
     } = parsedQuery;
 
     const opMap = {
@@ -160,6 +161,10 @@ const parseStructuredQuery = (jsonQueryString, userId) => {
         options.skip = parseInt(offsetCount);
     }
 
+    if (populate !== null) {
+        options.populate = populate;
+    }
+
     return { filter, options };
 };
 
@@ -227,9 +232,10 @@ router.get('/:collectionName', async (req, res) => {
         let options = {};
 
         // Check if the 'query' parameter exists and is a string
-        if (req.query.query && typeof req.query.query === 'string') {
+        if (req.query.query && typeof req.query.query === 'string' || req.body?.query) {
             try {
-                const parsed = parseStructuredQuery(req.query.query, req.user.uid);
+                const parsed = parseStructuredQuery(req.query.query || req.body?.query, req.user.uid);
+
                 filter = parsed.filter;
                 options = parsed.options;
             } catch (error) {
@@ -272,6 +278,35 @@ router.get('/:collectionName', async (req, res) => {
                 $limit: options.limit,
             });
         }
+        
+        // Handle populate option using $lookup in the aggregation pipeline
+        if (options.populate) {
+            const populatePaths = Array.isArray(options.populate) ? options.populate : [options.populate];
+            for (const { key: localField, collection: collectionName, as: localFieldAs, first: firstOnly } of populatePaths) {
+                // Assuming 'path' is the localField and the foreign collection name is derived from it
+                // This is a basic assumption and might need adjustment based on actual schema relationships
+                const foreignField = 'id'; // Assuming _id in the foreign collection
+
+                pipeline.push({
+                    $lookup: {
+                        from: collectionName,
+                        localField: localField,
+                        foreignField: foreignField,
+                        as: localFieldAs || localField
+                    }
+                });
+
+                if (firstOnly) {
+                    pipeline.push({
+                        $addFields: {
+                            [localFieldAs || localField]: {
+                                $arrayElemAt: [`$${localFieldAs || localField}`, 0]
+                            }
+                        }
+                    });
+                }
+            }
+        }
 
         const query = Model.aggregate(pipeline);
         const documents = await query.exec();
@@ -298,22 +333,39 @@ router.get('/:collectionName/:id', async (req, res) => {
         const Model = getDynamicModel(collectionName);
         let queryFilter = { id: req.params.id };
 
-        // if (collectionName !== 'users') {
-        //     queryFilter.userId = req.user.uid;
-        // } else {
-        //     // For 'users' collection, user can only get their own document.
-        //     if (req.params.id !== req.user.uid) {
-        //         return res.status(403).json({ msg: 'Forbidden: You can only access your own user document.' });
-        //     }
-        // }
+        let pipeline = [{ $match: queryFilter }];
 
-        const document = await Model.findOne(queryFilter);
+        if (req.query.populate) {
+            const populatePaths = Array.isArray(req.query.populate) ? req.query.populate : [req.query.populate];
+            for (const path of populatePaths) {
+                const localField = path;
+                const fromCollection = localField + 's'; // Simple pluralization
+                const foreignField = '_id';
 
-        if (!document) {
+                pipeline.push({
+                    $lookup: {
+                        from: fromCollection,
+                        localField: localField,
+                        foreignField: foreignField,
+                        as: localField
+                    }
+                });
+                pipeline.push({
+                    $unwind: {
+                        path: `$${localField}`,
+                        preserveNullAndEmptyArrays: true
+                    }
+                });
+            }
+        }
+
+        const documents = await Model.aggregate(pipeline).exec();
+
+        if (!documents.length) {
             return res.status(404).json({ msg: 'Document not found or you are not authorized to access it' });
         }
 
-        res.json(document);
+        res.json(documents[0]); 
     } catch (err) {
         console.error(err.message);
         if (err.kind === 'ObjectId') {

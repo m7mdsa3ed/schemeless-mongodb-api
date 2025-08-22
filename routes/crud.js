@@ -326,6 +326,57 @@ router.get('/:collectionName', async (req, res) => {
     }
 });
 
+// GET count of documents in a collection with filtering
+// Example: GET /data/users/count?query={"conditions":[{"field":"age","operator":">","value":25},{"field":"isActive","operator":"==","value":true}]}
+router.get('/:collectionName/count', async (req, res) => {
+    try {
+        const collectionName = req.params.collectionName;
+        const Model = getDynamicModel(collectionName);
+
+        let filter = {};
+
+        // Check if the 'query' parameter exists and is a string
+        if (req.query.query && typeof req.query.query === 'string' || req.body?.query) {
+            try {
+                const parsed = parseStructuredQuery(req.query.query || req.body?.query, req.user.uid);
+                filter = parsed.filter;
+            } catch (error) {
+                return res.status(400).json({ msg: error.message });
+            }
+        }
+
+        let count;
+
+        if (collectionName === 'transactions') {
+            // For transactions collection, we need to use the aggregation pipeline
+            // to properly handle the balance calculation stages
+            const pipeline = buildTransactionsPipeline(req.user.uid, filter, req.query);
+            
+            // Add a count stage to the pipeline
+            pipeline.push({
+                $count: 'total'
+            });
+
+            const result = await Model.aggregate(pipeline).exec();
+            count = result.length > 0 ? result[0].total : 0;
+        } else {
+            // For other collections, use countDocuments with the filter
+            count = await Model.countDocuments(filter);
+        }
+
+        res.json({
+            count,
+            metadata: {
+                collection: collectionName,
+                filter: filter
+            },
+        });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
 // GET a single document by ID
 router.get('/:collectionName/:id', async (req, res) => {
     try {

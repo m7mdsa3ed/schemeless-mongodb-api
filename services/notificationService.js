@@ -1,5 +1,6 @@
 const admin = require('firebase-admin');
 const config = require('../config');
+const { getDynamicModel } = require('../lib/getDynamicModel');
 
 // Initialize Firebase Admin SDK
 const initializeFirebase = () => {
@@ -41,17 +42,35 @@ const sendNotification = async (fcmTokens, title, body, data = {}) => {
     }));
 
     // If only one token, use send() for better error handling
+    let result;
     if (fcmTokens.length === 1) {
       const response = await firebase.messaging().send(messages[0]);
       console.log('Successfully sent notification:', response);
-      return { success: true, response, tokens: [fcmTokens[0]] };
+      result = { success: true, response, tokens: [fcmTokens[0]] };
     }
     // If multiple tokens, use sendAll()
     else {
       const response = await firebase.messaging().sendAll(messages);
       console.log('Successfully sent notifications:', response);
-      return { success: true, response, tokens: fcmTokens };
+      result = { success: true, response, tokens: fcmTokens };
     }
+
+    // Save notification to database (without tokens)
+    try {
+      const NotificationModel = getDynamicModel('notifications');
+      await NotificationModel.create({
+        title,
+        body,
+        data,
+        type: 'single',
+        response: result.response,
+        createdAt: new Date()
+      });
+    } catch (dbError) {
+      console.error('Error saving notification to database:', dbError);
+    }
+
+    return result;
   } catch (error) {
     console.error('Error sending notification:', error);
     throw error;
@@ -94,6 +113,23 @@ const sendNotificationToMultiple = async (fcmTokens, title, body, data = {}) => 
     }
 
     console.log('Successfully sent notifications to', fcmTokens.length, 'tokens');
+    
+    // Save notification to database (without tokens)
+    try {
+      const NotificationModel = getDynamicModel('notifications');
+      await NotificationModel.create({
+        title,
+        body,
+        data,
+        type: 'multiple',
+        results,
+        totalTokens: fcmTokens.length,
+        createdAt: new Date()
+      });
+    } catch (dbError) {
+      console.error('Error saving notification to database:', dbError);
+    }
+
     return { success: true, results, totalTokens: fcmTokens.length };
   } catch (error) {
     console.error('Error sending notifications:', error);
@@ -116,6 +152,23 @@ const sendNotificationToTopic = async (topic, title, body, data = {}) => {
 
     const response = await firebase.messaging().send(message);
     console.log('Successfully sent notification to topic:', response);
+    
+    // Save notification to database
+    try {
+      const NotificationModel = getDynamicModel('notifications');
+      await NotificationModel.create({
+        title,
+        body,
+        data,
+        topic,
+        type: 'topic',
+        response,
+        createdAt: new Date()
+      });
+    } catch (dbError) {
+      console.error('Error saving notification to database:', dbError);
+    }
+    
     return { success: true, response, topic };
   } catch (error) {
     console.error('Error sending notification to topic:', error);

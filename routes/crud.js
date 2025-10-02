@@ -1,15 +1,13 @@
 // routes/crud.js
 const express = require('express');
-const authMiddleware = require('../middlewares/authMiddleware');
-const publicCollectionMiddleware = require('../middlewares/publicCollectionMiddleware');
+const unifiedAuthMiddleware = require('../middlewares/unifiedAuthMiddleware');
 const limitsMiddleware = require('../middlewares/limitsMiddleware');
 const { getDynamicModel } = require('../lib/getDynamicModel');
 const config = require('../config');
 const router = express.Router();
 
-// Apply public collection middleware before auth middleware
-router.use(publicCollectionMiddleware);
-router.use(authMiddleware);
+// Apply unified auth middleware that handles both auth and public collection logic
+router.use(unifiedAuthMiddleware);
 
 // Helper to parse a structured JSON query parameter into Mongoose filter and options
 // This function now expects a JSON string like:

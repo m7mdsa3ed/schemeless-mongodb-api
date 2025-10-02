@@ -1,5 +1,5 @@
 const express = require('express');
-const authMiddleware = require('../middlewares/authMiddleware');
+const unifiedAuthMiddleware = require('../middlewares/unifiedAuthMiddleware');
 const { uploadSingle, uploadMultiple, uploadAny } = require('../middlewares/uploadMiddleware');
 const storageService = require('../services/storage/storageService');
 const config = require('../config');
@@ -11,7 +11,7 @@ const router = express.Router();
 const Uploads = getDynamicModel('uploads');
 
 // Apply authentication middleware to all routes
-router.use(authMiddleware);
+router.use(unifiedAuthMiddleware);
 
 // Initialize the storage service based on configuration
 const initializeStorageService = () => {

@@ -1,11 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const authMiddleware = require('../middlewares/authMiddleware');
+const unifiedAuthMiddleware = require('../middlewares/unifiedAuthMiddleware');
 const { getDynamicModel } = require('../lib/getDynamicModel');
 const notificationService = require('../services/notificationService');
 
 // Apply authentication middleware to all routes in this file
-router.use(authMiddleware);
+router.use(unifiedAuthMiddleware);
 
 // Define the collection name for storing functions
 const FUNCTION_COLLECTION = 'cloud_functions';

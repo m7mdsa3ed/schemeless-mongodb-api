@@ -312,7 +312,6 @@ router.get('/config', async (req, res) => {
       data: {
         provider: config.fileUpload.provider,
         maxFileSize: config.fileUpload.maxFileSize,
-        allowedMimeTypes: config.fileUpload.allowedMimeTypes,
         currentProvider: currentProvider.constructor.name
       }
     });

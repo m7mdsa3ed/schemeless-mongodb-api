@@ -8,13 +8,7 @@ const storage = multer.memoryStorage(); // Use memory storage for Cloudinary and
 
 // File filter function to validate file types
 const fileFilter = (req, file, cb) => {
-  const allowedMimeTypes = config.fileUpload.allowedMimeTypes;
-  
-  if (allowedMimeTypes.includes(file.mimetype)) {
-    cb(null, true); // Accept the file
-  } else {
-    cb(new Error(`File type ${file.mimetype} is not allowed`), false); // Reject the file
-  }
+  cb(null, true); // Accept the file
 };
 
 // Configure multer upload middleware

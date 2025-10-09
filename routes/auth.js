@@ -11,7 +11,7 @@ if (config.authType === 'local') {
   // Register a new user
   router.post('/register', async (req, res) => {
     try {
-      const { email, password, name } = req.body;
+      const { email, password, name, ...args } = req.body;
 
       // Validate input
       if (!email || !password || !name) {
@@ -42,7 +42,8 @@ if (config.authType === 'local') {
         name,
         email_verified: false,
         plan: 'free',
-        createdAt: new Date()
+        createdAt: new Date(),
+        ...args
       });
 
       await newUser.save();
@@ -59,10 +60,7 @@ if (config.authType === 'local') {
         token,
         user: {
           uid: newUser.id,
-          email: newUser.email,
-          name: newUser.name,
-          email_verified: newUser.email_verified,
-          plan: newUser.plan
+          ...newUser.toObject()
         }
       });
     } catch (error) {

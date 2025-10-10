@@ -11,7 +11,7 @@ if (config.authType === 'local') {
   // Register a new user
   router.post('/register', async (req, res) => {
     try {
-      const { email, password, name } = req.body;
+      const { email, password, name, ...args } = req.body;
 
       // Validate input
       if (!email || !password || !name) {
@@ -42,7 +42,8 @@ if (config.authType === 'local') {
         name,
         email_verified: false,
         plan: 'free',
-        createdAt: new Date()
+        createdAt: new Date(),
+        ...args
       });
 
       await newUser.save();
@@ -59,10 +60,7 @@ if (config.authType === 'local') {
         token,
         user: {
           uid: newUser.id,
-          email: newUser.email,
-          name: newUser.name,
-          email_verified: newUser.email_verified,
-          plan: newUser.plan
+          ...newUser.toObject()
         }
       });
     } catch (error) {
@@ -151,11 +149,7 @@ router.get('/me', require('../middlewares/authMiddleware'), async (req, res) => 
 
     res.json({
       uid: user.id,
-      email: user.email,
-      name: user.name,
-      email_verified: user.email_verified,
-      plan: user.plan,
-      lastLogin: user.lastLogin || null
+      ...user
     });
   } catch (error) {
     console.error('Get User Error:', error);
@@ -165,5 +159,79 @@ router.get('/me', require('../middlewares/authMiddleware'), async (req, res) => 
     });
   }
 });
+
+// Only expose local auth endpoints if AUTH_TYPE is set to local
+if (config.authType === 'local') {
+  // PUT /api/auth/password
+  // Update user password
+  router.put('/password', require('../middlewares/authMiddleware'), async (req, res) => {
+    try {
+      const { currentPassword, newPassword } = req.body;
+      const userId = req.user.uid;
+
+      // Validate input
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: 'Current password and new password are required'
+        });
+      }
+
+      // Find user
+      const user = await getDynamicModel('users').findOne({ id: userId });
+      if (!user) {
+        return res.status(404).json({
+          error: 'Not Found',
+          message: 'User not found'
+        });
+      }
+
+      // Check if user has a password (some users might be from Firebase auth)
+      if (!user.password) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: 'Password update not available for this account type'
+        });
+      }
+
+      // Verify current password
+      const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);
+      if (!isCurrentPasswordValid) {
+        return res.status(401).json({
+          error: 'Unauthorized',
+          message: 'Current password is incorrect'
+        });
+      }
+
+      // Check if new password is different from current password
+      const isSamePassword = await bcrypt.compare(newPassword, user.password);
+      if (isSamePassword) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: 'New password must be different from current password'
+        });
+      }
+
+      // Hash new password
+      const salt = await bcrypt.genSalt(10);
+      const hashedNewPassword = await bcrypt.hash(newPassword, salt);
+
+      // Update user password
+      user.password = hashedNewPassword;
+      user.updatedAt = new Date();
+      await user.save();
+
+      res.json({
+        message: 'Password updated successfully'
+      });
+    } catch (error) {
+      console.error('Password Update Error:', error);
+      res.status(500).json({
+        error: 'Internal Server Error',
+        message: 'Failed to update password'
+      });
+    }
+  });
+}
 
 module.exports = router;

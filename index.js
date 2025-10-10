@@ -8,6 +8,7 @@ const authRoutes = require('./routes/auth');
 const uploadRoutes = require('./routes/upload');
 const functionRoutes = require('./routes/functions');
 const queryRoutes = require('./routes/queries');
+const emailRoutes = require('./routes/email');
 const config = require('./config');
 const notificationService = require('./services/notificationService');
 
@@ -45,6 +46,7 @@ app.use('/api/auth', authRoutes); // Authentication endpoints
 app.use('/api/upload', uploadRoutes); // File upload endpoints
 app.use('/api/functions', functionRoutes); // Function management and execution
 app.use('/api/queries', queryRoutes); // Query management and execution
+app.use('/api/email', emailRoutes); // Email sending endpoints
 app.use('/api', crudRoutes); // All CRUD operations will be under /api/:collectionName
 
 // Global error handler for auth errors

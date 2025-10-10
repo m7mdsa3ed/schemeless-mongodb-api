@@ -72,6 +72,31 @@ const config = {
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     ],
   },
+
+  // Email Configuration
+  email: {
+    // Email provider: 'smtp' or 'api'
+    provider: process.env.EMAIL_PROVIDER || 'smtp',
+
+    // SMTP Configuration
+    smtp: {
+      host: process.env.SMTP_HOST,
+      port: process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT) : 587,
+      secure: process.env.SMTP_SECURE === 'true',
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+      from: process.env.SMTP_FROM,
+      rejectUnauthorized: process.env.SMTP_REJECT_UNAUTHORIZED !== 'false',
+    },
+
+    // API Configuration (for services like Mailgun, SendGrid, etc.)
+    api: {
+      type: process.env.EMAIL_API_TYPE, // 'mailgun', 'sendgrid', etc.
+      apiKey: process.env.EMAIL_API_KEY,
+      domain: process.env.EMAIL_API_DOMAIN, // for Mailgun
+      from: process.env.EMAIL_API_FROM,
+    },
+  },
 };
 
 // Validate required configuration
@@ -96,6 +121,20 @@ const validateConfig = () => {
     // No additional configuration required
   } else {
     errors.push('AUTH_TYPE must be either "firebase" or "local"');
+  }
+
+  // Validate email configuration
+  if (config.email.provider === 'smtp') {
+    if (!config.email.smtp.host || !config.email.smtp.user || !config.email.smtp.pass || !config.email.smtp.from) {
+      errors.push('SMTP configuration is required when EMAIL_PROVIDER=smtp. Provide SMTP_HOST, SMTP_USER, SMTP_PASS, and SMTP_FROM');
+    }
+  } else if (config.email.provider === 'api') {
+    if (!config.email.api.type || !config.email.api.apiKey || !config.email.api.from) {
+      errors.push('API configuration is required when EMAIL_PROVIDER=api. Provide EMAIL_API_TYPE, EMAIL_API_KEY, and EMAIL_API_FROM');
+    }
+    if (config.email.api.type === 'mailgun' && !config.email.api.domain) {
+      errors.push('EMAIL_API_DOMAIN is required for Mailgun API provider');
+    }
   }
 
   if (errors.length > 0) {

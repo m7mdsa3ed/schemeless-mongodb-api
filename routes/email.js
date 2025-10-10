@@ -13,10 +13,10 @@ router.post('/send', async (req, res) => {
     });
     
 
-    if (!to || !subject || !text) {
+    if (!to || !subject || (!text && !html)) {
       return res.status(400).json({
         success: false,
-        error: 'Missing required fields: to, subject, text',
+        error: 'Missing required fields: to, subject, and either text or html content',
       });
     }
 
@@ -49,10 +49,10 @@ router.post('/bulk', async (req, res) => {
       });
     }
 
-    if (!subject || !text) {
+    if (!subject || (!text && !html)) {
       return res.status(400).json({
         success: false,
-        error: 'Missing required fields: subject, text',
+        error: 'Missing required fields: subject, and either text or html content',
       });
     }
 

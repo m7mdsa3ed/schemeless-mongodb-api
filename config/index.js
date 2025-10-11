@@ -111,20 +111,6 @@ const validateConfig = () => {
     errors.push('AUTH_TYPE must be either "firebase" or "local"');
   }
 
-  // Validate email configuration
-  if (config.email.provider === 'smtp') {
-    if (!config.email.smtp.host || !config.email.smtp.user || !config.email.smtp.pass || !config.email.smtp.from) {
-      errors.push('SMTP configuration is required when EMAIL_PROVIDER=smtp. Provide SMTP_HOST, SMTP_USER, SMTP_PASS, and SMTP_FROM');
-    }
-  } else if (config.email.provider === 'api') {
-    if (!config.email.api.type || !config.email.api.apiKey || !config.email.api.from) {
-      errors.push('API configuration is required when EMAIL_PROVIDER=api. Provide EMAIL_API_TYPE, EMAIL_API_KEY, and EMAIL_API_FROM');
-    }
-    if (config.email.api.type === 'mailgun' && !config.email.api.domain) {
-      errors.push('EMAIL_API_DOMAIN is required for Mailgun API provider');
-    }
-  }
-
   if (errors.length > 0) {
     console.error('Configuration validation failed:');
     errors.forEach(error => console.error(`- ${error}`));

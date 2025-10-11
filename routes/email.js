@@ -7,12 +7,6 @@ router.post('/send', async (req, res) => {
   try {
     const { to, subject, text, html, options = {} } = req.body;
 
-    console.log({
-      message: 'Received email send request',
-      to, subject, text, html, options
-    });
-    
-
     if (!to || !subject || (!text && !html)) {
       return res.status(400).json({
         success: false,

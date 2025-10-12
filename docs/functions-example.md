@@ -432,6 +432,518 @@ This will call the `processUserData` function with `userId` set to `"user123"` a
 
 ---
 
+## Streaming Functions with Server-Sent Events (SSE)
+
+The Functions API now supports streaming responses using Server-Sent Events (SSE). This is useful for:
+- Sending large datasets incrementally
+- Real-time progress updates during long-running operations
+- Streaming database query results
+- Processing items one at a time
+
+### How Streaming Works
+
+Streaming functions use the `/api/functions/:name/execute-stream` endpoint instead of `/execute`. Inside the function, you have access to a `stream` object with three methods:
+
+- `stream.write(data)` - Send a data chunk to the client
+- `stream.end(data)` - Send final data (optional) and close the stream
+- `stream.error(error)` - Send an error message and close the stream
+
+### Example 1: Streaming Database Query Results
+
+Instead of loading all results into memory and sending them at once, you can stream them one document at a time:
+
+```javascript
+// Define a function that streams users from the database
+const streamUsers = async (limit) => {
+  const User = getDynamicModel('users');
+  const cursor = User.find().limit(limit).cursor();
+
+  let count = 0;
+  for await (const user of cursor) {
+    stream.write({ user, index: count++ });
+  }
+
+  stream.end({ message: 'All users streamed', total: count });
+};
+
+// Convert to string and register
+const functionData = {
+  name: 'streamUsers',
+  description: 'Streams users from the database one at a time.',
+  code: streamUsers.toString(),
+  parameters: [
+    { name: 'limit', type: 'number', description: 'Maximum number of users to stream' }
+  ],
+};
+```
+
+### Example 2: Progress Updates for Long Operations
+
+Send progress updates during a long-running operation:
+
+```javascript
+const processLargeDataset = async (datasetName) => {
+  const Dataset = getDynamicModel(datasetName);
+  const items = await Dataset.find();
+  const total = items.length;
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+
+    // Process the item (expensive operation)
+    await someExpensiveOperation(item);
+
+    // Send progress update
+    stream.write({
+      progress: Math.round(((i + 1) / total) * 100),
+      processed: i + 1,
+      total: total,
+      currentItem: item._id
+    });
+  }
+
+  stream.end({ message: 'Processing complete', total: total });
+};
+```
+
+### Example 3: Real-time Data Aggregation
+
+Stream aggregated results as they're computed:
+
+```javascript
+const streamAggregatedData = async (collectionName, groupByField) => {
+  const Model = getDynamicModel(collectionName);
+
+  // Get unique values for grouping
+  const uniqueValues = await Model.distinct(groupByField);
+
+  stream.write({ message: `Found ${uniqueValues.length} unique groups` });
+
+  for (const value of uniqueValues) {
+    const count = await Model.countDocuments({ [groupByField]: value });
+    const sum = await Model.aggregate([
+      { $match: { [groupByField]: value } },
+      { $group: { _id: null, total: { $sum: '$amount' } } }
+    ]);
+
+    stream.write({
+      group: value,
+      count: count,
+      total: sum[0]?.total || 0
+    });
+  }
+
+  stream.end({ message: 'Aggregation complete' });
+};
+```
+
+### Executing Streaming Functions
+
+**Using curl:**
+
+```bash
+curl -X POST http://localhost:5000/api/functions/streamUsers/execute-stream \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_AUTH_TOKEN" \
+  -d '{
+    "args": [10]
+  }'
+```
+
+**Using JavaScript/Node.js:**
+
+```javascript
+const executeStreamingFunction = async (functionName, args) => {
+  const response = await fetch(`http://localhost:5000/api/functions/${functionName}/execute-stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer YOUR_AUTH_TOKEN',
+    },
+    body: JSON.stringify({ args }),
+  });
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    // Decode the chunk
+    const chunk = decoder.decode(value, { stream: true });
+
+    // Parse SSE messages (format: "data: {...}\n\n")
+    const lines = chunk.split('\n');
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const data = JSON.parse(line.slice(6));
+
+        if (data.type === 'data') {
+          console.log('Received data:', data.payload);
+        } else if (data.type === 'end') {
+          console.log('Stream ended:', data.payload);
+        } else if (data.type === 'error') {
+          console.error('Stream error:', data.message);
+        }
+      }
+    }
+  }
+};
+
+// Execute the streaming function
+executeStreamingFunction('streamUsers', [10]);
+```
+
+**Using Browser EventSource (for GET-like streaming):**
+
+Note: EventSource only supports GET requests, so for POST requests with authentication, use the fetch API approach above.
+
+### SSE Message Format
+
+All streaming messages follow this format:
+
+```
+data: {"type": "data", "payload": {...}}\n\n
+data: {"type": "end", "payload": {...}}\n\n
+data: {"type": "error", "message": "error description"}\n\n
+```
+
+- `type: "data"` - A data chunk from `stream.write()`
+- `type: "end"` - Final message from `stream.end()`, includes optional payload
+- `type: "error"` - Error message from `stream.error()` or uncaught exceptions
+
+### Error Handling in Streaming Functions
+
+Always handle errors gracefully in streaming functions:
+
+```javascript
+const safeStreamingFunction = async (query) => {
+  try {
+    const Model = getDynamicModel('items');
+    const cursor = Model.find(query).cursor();
+
+    for await (const doc of cursor) {
+      stream.write(doc);
+    }
+
+    stream.end({ message: 'Success' });
+  } catch (error) {
+    stream.error(error);
+  }
+};
+```
+
+### When to Use Streaming vs Regular Execution
+
+**Use Streaming (`/execute-stream`) when:**
+- Processing large datasets that shouldn't be loaded entirely into memory
+- Providing real-time progress updates for long operations
+- Client needs to start processing results before all data is available
+- Streaming database cursors or large query results
+
+**Use Regular Execution (`/execute`) when:**
+- Function returns a small, simple result
+- All data must be available before processing
+- Client prefers a single JSON response
+- Function completes quickly
+
+---
+
+## Advanced Example: OpenAI-Compatible API with Streaming
+
+A powerful use case for streaming functions is integrating with AI APIs that support streaming responses, such as OpenAI's Chat Completions API. This allows you to stream AI-generated content token-by-token to your clients.
+
+### Example: Streaming OpenAI Chat Completions
+
+```javascript
+const streamOpenAIChat = async (messages, model = 'gpt-4', apiKey) => {
+  try {
+    // Make request to OpenAI API with streaming enabled
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: messages,
+        stream: true
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenAI API error: ${response.statusText}`);
+    }
+
+    // Stream the response
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      // Decode the chunk and add to buffer
+      buffer += decoder.decode(value, { stream: true });
+
+      // Process complete lines
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // Keep incomplete line in buffer
+
+      for (const line of lines) {
+        const trimmedLine = line.trim();
+        if (!trimmedLine || trimmedLine === 'data: [DONE]') continue;
+
+        if (trimmedLine.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(trimmedLine.slice(6));
+            const content = data.choices[0]?.delta?.content;
+
+            if (content) {
+              // Stream each token to the client
+              stream.write({
+                content: content,
+                role: data.choices[0]?.delta?.role,
+                finish_reason: data.choices[0]?.finish_reason
+              });
+            }
+          } catch (e) {
+            console.error('Error parsing SSE data:', e);
+          }
+        }
+      }
+    }
+
+    stream.end({ message: 'Streaming complete' });
+  } catch (error) {
+    console.error('Error streaming OpenAI response:', error);
+    stream.error(error);
+  }
+};
+
+// Register the function
+const functionData = {
+  name: 'streamOpenAIChat',
+  description: 'Streams OpenAI chat completions token by token.',
+  code: streamOpenAIChat.toString(),
+  parameters: [
+    {
+      name: 'messages',
+      type: 'array',
+      description: 'Array of message objects with role and content'
+    },
+    {
+      name: 'model',
+      type: 'string',
+      description: 'OpenAI model to use (default: gpt-4)'
+    },
+    {
+      name: 'apiKey',
+      type: 'string',
+      description: 'OpenAI API key'
+    }
+  ]
+};
+```
+
+### Executing the OpenAI Streaming Function
+
+**Request:**
+
+```bash
+curl -X POST http://localhost:5000/api/functions/streamOpenAIChat/execute-stream \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_AUTH_TOKEN" \
+  -d '{
+    "args": [
+      [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Write a short poem about coding."}
+      ],
+      "gpt-4",
+      "YOUR_OPENAI_API_KEY"
+    ]
+  }'
+```
+
+**Client-side Implementation:**
+
+```javascript
+const streamAIChat = async (messages, model = 'gpt-4', apiKey) => {
+  const response = await fetch('http://localhost:5000/api/functions/streamOpenAIChat/execute-stream', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer YOUR_AUTH_TOKEN',
+    },
+    body: JSON.stringify({
+      args: [messages, model, apiKey]
+    }),
+  });
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let fullText = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    const chunk = decoder.decode(value, { stream: true });
+    const lines = chunk.split('\n');
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        try {
+          const data = JSON.parse(line.slice(6));
+
+          if (data.type === 'data' && data.payload.content) {
+            // Append token to display
+            fullText += data.payload.content;
+            console.log('Token:', data.payload.content);
+            // Update UI in real-time
+            document.getElementById('output').textContent = fullText;
+          } else if (data.type === 'end') {
+            console.log('Stream complete:', data.payload);
+          } else if (data.type === 'error') {
+            console.error('Error:', data.message);
+          }
+        } catch (e) {
+          // Ignore parse errors for incomplete chunks
+        }
+      }
+    }
+  }
+
+  return fullText;
+};
+
+// Usage
+streamAIChat(
+  [
+    { role: 'system', content: 'You are a helpful assistant.' },
+    { role: 'user', content: 'Explain recursion in simple terms.' }
+  ],
+  'gpt-4',
+  'YOUR_OPENAI_API_KEY'
+);
+```
+
+### Other AI Provider Examples
+
+The same pattern works with other OpenAI-compatible APIs:
+
+**Anthropic Claude:**
+```javascript
+const streamClaudeChat = async (messages, model = 'claude-3-sonnet-20240229', apiKey) => {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify({
+      model: model,
+      messages: messages,
+      max_tokens: 4096,
+      stream: true
+    })
+  });
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        try {
+          const data = JSON.parse(line.slice(6));
+          if (data.type === 'content_block_delta' && data.delta?.text) {
+            stream.write({ content: data.delta.text });
+          }
+        } catch (e) {
+          console.error('Parse error:', e);
+        }
+      }
+    }
+  }
+
+  stream.end({ message: 'Complete' });
+};
+```
+
+**Local LLMs (Ollama, LM Studio, etc.):**
+```javascript
+const streamLocalLLM = async (prompt, model = 'llama2') => {
+  const response = await fetch('http://localhost:11434/api/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: model,
+      prompt: prompt,
+      stream: true
+    })
+  });
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    const chunk = decoder.decode(value, { stream: true });
+    const lines = chunk.split('\n').filter(l => l.trim());
+
+    for (const line of lines) {
+      try {
+        const data = JSON.parse(line);
+        if (data.response) {
+          stream.write({ content: data.response });
+        }
+        if (data.done) {
+          stream.end({ total_duration: data.total_duration });
+        }
+      } catch (e) {
+        console.error('Parse error:', e);
+      }
+    }
+  }
+};
+```
+
+### Benefits of Streaming AI Responses
+
+1. **Better User Experience**: Users see responses appear in real-time instead of waiting for complete generation
+2. **Lower Latency**: First token appears much faster than waiting for complete response
+3. **Reduced Memory**: No need to buffer entire response before sending
+4. **Progress Indication**: Users know the system is working, reducing perceived wait time
+5. **Early Termination**: Can stop generation early if needed
+
+### Security Considerations
+
+When implementing AI streaming functions:
+
+1. **API Key Management**: Never expose API keys in client code. Store them securely on the server or use environment variables
+2. **Rate Limiting**: Implement rate limiting to prevent abuse
+3. **Cost Control**: Monitor API usage and implement quotas
+4. **Input Validation**: Validate and sanitize user inputs before sending to AI APIs
+5. **Error Handling**: Handle API errors gracefully and don't expose internal error details to clients
+
+---
+
 ## Real-World Example: Placing an Order
 
 Let's create a more complex, real-world example: a function to place an order. This function will perform several actions in a single, atomic operation:

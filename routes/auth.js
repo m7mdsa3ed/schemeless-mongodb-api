@@ -216,10 +216,16 @@ if (config.authType === 'local') {
       const salt = await bcrypt.genSalt(10);
       const hashedNewPassword = await bcrypt.hash(newPassword, salt);
 
-      // Update user password
-      user.password = hashedNewPassword;
-      user.updatedAt = new Date();
-      await user.save();
+      // Update user password using updateOne to ensure it saves to database
+      await getDynamicModel('users').updateOne(
+        { id: userId },
+        {
+          $set: {
+            password: hashedNewPassword,
+            updatedAt: new Date()
+          }
+        }
+      );
 
       res.json({
         message: 'Password updated successfully'

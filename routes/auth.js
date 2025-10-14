@@ -120,7 +120,7 @@ if (config.authType === 'local') {
         token,
         user: {
           uid: user.id,
-          ...user
+          ...user.toObject()
         }
       });
     } catch (error) {

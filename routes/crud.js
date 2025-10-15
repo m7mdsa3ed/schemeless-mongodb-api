@@ -3,6 +3,7 @@ const express = require('express');
 const authMiddleware = require('../middlewares/authMiddleware');
 const publicCollectionMiddleware = require('../middlewares/publicCollectionMiddleware');
 const limitsMiddleware = require('../middlewares/limitsMiddleware');
+const { rbacMiddleware, filterDocumentFields, filterRequestBodyFields } = require('../middlewares/rbacMiddleware');
 const { getDynamicModel } = require('../lib/getDynamicModel');
 const config = require('../config');
 const router = express.Router();
@@ -223,7 +224,7 @@ const buildTransactionsPipeline = (userId, userFilter, queryParams) => {
 
 // GET all documents in a collection with filtering, sorting, and pagination
 // Example: GET /data/users?query={"conditions":[{"field":"age","operator":">","value":25},{"field":"isActive","operator":"==","value":true}],"orderByField":"age","orderDirection":"asc","limitCount":10,"offsetCount":0}
-router.get('/:collectionName', async (req, res) => {
+router.get('/:collectionName', rbacMiddleware('read'), async (req, res) => {
     try {
         const collectionName = req.params.collectionName;
         const Model = getDynamicModel(collectionName);
@@ -243,13 +244,16 @@ router.get('/:collectionName', async (req, res) => {
             }
         }
 
-        // if (collectionName !== 'users') {
-        //     filter.userId ??= req.user.uid; // Ensures userId is set if not provided in query for other collections
-        // } else {
-        //     // For the 'users' collection, always restrict to the current user's document.
-        //     // This overrides any 'id' potentially set in the query by parseStructuredQuery if it was for another user.
-        //     filter.id = req.user.uid;
-        // }
+        // Apply ownership filtering for "own" permissions
+        if (req.requiresOwnershipCheck) {
+            if (collectionName !== 'users') {
+                // For non-users collections, filter by userId
+                filter.userId = req.user.uid;
+            } else {
+                // For users collection, only allow user to see their own document
+                filter.id = req.user.uid;
+            }
+        }
 
         let pipeline = [];
 
@@ -309,8 +313,13 @@ router.get('/:collectionName', async (req, res) => {
         }
 
         const query = Model.aggregate(pipeline);
-        const documents = await query.exec();
+        let documents = await query.exec();
         const total = await Model.countDocuments(filter); // Count total matching documents based on the final filter
+
+        // Apply field-level filtering if permissions are set
+        if (req.allowedFields) {
+            documents = documents.map(doc => filterDocumentFields(doc, req.allowedFields));
+        }
 
         res.json({
             data: documents,
@@ -328,7 +337,7 @@ router.get('/:collectionName', async (req, res) => {
 
 // GET count of documents in a collection with filtering
 // Example: GET /data/users/count?query={"conditions":[{"field":"age","operator":">","value":25},{"field":"isActive","operator":"==","value":true}]}
-router.get('/:collectionName/count', async (req, res) => {
+router.get('/:collectionName/count', rbacMiddleware('read'), async (req, res) => {
     try {
         const collectionName = req.params.collectionName;
         const Model = getDynamicModel(collectionName);
@@ -378,11 +387,22 @@ router.get('/:collectionName/count', async (req, res) => {
 });
 
 // GET a single document by ID
-router.get('/:collectionName/:id', async (req, res) => {
+router.get('/:collectionName/:id', rbacMiddleware('read'), async (req, res) => {
     try {
         const collectionName = req.params.collectionName;
         const Model = getDynamicModel(collectionName);
         let queryFilter = { id: req.params.id };
+
+        // Apply ownership filtering for "own" permissions
+        if (req.requiresOwnershipCheck) {
+            if (collectionName !== 'users') {
+                // For non-users collections, ensure user owns the document
+                queryFilter.userId = req.user.uid;
+            } else {
+                // For users collection, only allow user to see their own document
+                queryFilter.id = req.user.uid;
+            }
+        }
 
         let pipeline = [{ $match: queryFilter }];
 
@@ -416,7 +436,14 @@ router.get('/:collectionName/:id', async (req, res) => {
             return res.status(404).json({ msg: 'Document not found or you are not authorized to access it' });
         }
 
-        res.json(documents[0]); 
+        let document = documents[0];
+
+        // Apply field-level filtering if permissions are set
+        if (req.allowedFields) {
+            document = filterDocumentFields(document, req.allowedFields);
+        }
+
+        res.json(document); 
     } catch (err) {
         console.error(err.message);
         if (err.kind === 'ObjectId') {
@@ -427,16 +454,32 @@ router.get('/:collectionName/:id', async (req, res) => {
 });
 
 // POST create a new document
-router.post('/:collectionName', limitsMiddleware, async (req, res) => {
+router.post('/:collectionName', rbacMiddleware('create'), limitsMiddleware, async (req, res) => {
     try {
         const collectionName = req.params.collectionName;
         const Model = getDynamicModel(collectionName);
 
-        // if (!req.body.userId) {
-        //     req.body.userId = req.user.uid;
-        // }
+        // Apply field-level filtering for create operations
+        let documentData = req.body;
+        if (req.allowedWriteFields) {
+            documentData = filterRequestBodyFields(req.body, req.allowedWriteFields);
+        }
 
-        const newDocument = new Model(req.body);
+        // Apply ownership logic for "own" permissions
+        if (req.requiresOwnershipCheck) {
+            // Auto-assign userId if not provided
+            if (!documentData.userId) {
+                documentData.userId = req.user.uid;
+            }
+            // Ensure user is setting themselves as owner
+            else if (documentData.userId !== req.user.uid) {
+                return res.status(403).json({
+                    msg: 'Forbidden: You can only create documents for yourself'
+                });
+            }
+        }
+
+        const newDocument = new Model(documentData);
         await newDocument.save();
         res.status(201).json(newDocument);
     } catch (err) {
@@ -446,7 +489,7 @@ router.post('/:collectionName', limitsMiddleware, async (req, res) => {
 });
 
 // POST create multiple new documents (batch write)
-router.post('/:collectionName/batch', limitsMiddleware, async (req, res) => {
+router.post('/:collectionName/batch', rbacMiddleware('create'), limitsMiddleware, async (req, res) => {
     try {
         const collectionName = req.params.collectionName;
         const Model = getDynamicModel(collectionName);
@@ -462,11 +505,26 @@ router.post('/:collectionName/batch', limitsMiddleware, async (req, res) => {
         }
 
         const documents = req.body.map(doc => {
-            // if (!doc.userId) {
-            //     doc.userId = req.user.uid;
-            // }
+            let documentData = doc;
 
-            return doc;
+            // Apply field-level filtering for create operations
+            if (req.allowedWriteFields) {
+                documentData = filterRequestBodyFields(doc, req.allowedWriteFields);
+            }
+
+            // Apply ownership logic for "own" permissions
+            if (req.requiresOwnershipCheck) {
+                // Auto-assign userId if not provided
+                if (!documentData.userId) {
+                    documentData.userId = req.user.uid;
+                }
+                // Ensure user is setting themselves as owner
+                else if (documentData.userId !== req.user.uid) {
+                    throw new Error(`Forbidden: You can only create documents for yourself`);
+                }
+            }
+
+            return documentData;
         });
 
         const newDocuments = await Model.insertMany(documents, { ordered: false }); // ordered: false allows other valid operations to continue if one fails
@@ -486,25 +544,34 @@ router.post('/:collectionName/batch', limitsMiddleware, async (req, res) => {
 });
 
 // PUT update a document by ID
-router.put('/:collectionName/:id', async (req, res) => {
+router.put('/:collectionName/:id', rbacMiddleware('write'), async (req, res) => {
     try {
         const collectionName = req.params.collectionName;
         const Model = getDynamicModel(collectionName);
         let queryFilter = { id: req.params.id };
 
-        // if (collectionName !== 'users') {
-        //     queryFilter.userId = req.user.uid;
-        // } else {
-        //     // For 'users' collection, user can only update their own document.
-        //     if (req.params.id !== req.user.uid) {
-        //         return res.status(403).json({ msg: 'Forbidden: You can only update your own user document.' });
-        //     }
-        //     // queryFilter is already { id: req.params.id }, which is validated to be req.user.uid
-        // }
+        // Apply ownership filtering for "own" permissions
+        if (req.requiresOwnershipCheck) {
+            if (collectionName !== 'users') {
+                // For non-users collections, ensure user owns the document
+                queryFilter.userId = req.user.uid;
+            } else {
+                // For users collection, only allow user to update their own document
+                if (req.params.id !== req.user.uid) {
+                    return res.status(403).json({ msg: 'Forbidden: You can only update your own user document.' });
+                }
+            }
+        }
+
+        // Apply field-level filtering for write operations
+        let updateData = req.body;
+        if (req.allowedWriteFields) {
+            updateData = filterRequestBodyFields(req.body, req.allowedWriteFields);
+        }
 
         const updatedDocument = await Model.findOneAndUpdate(
             queryFilter,
-            req.body,
+            updateData,
             { new: true, runValidators: true }
         );
 
@@ -522,7 +589,7 @@ router.put('/:collectionName/:id', async (req, res) => {
 });
 
 // DELETE multiple documents by IDs (bulk delete)
-router.delete('/:collectionName/batch', async (req, res) => {
+router.delete('/:collectionName/batch', rbacMiddleware('delete'), async (req, res) => {
     try {
         const collectionName = req.params.collectionName;
         const Model = getDynamicModel(collectionName);
@@ -535,21 +602,27 @@ router.delete('/:collectionName/batch', async (req, res) => {
         let deleteFilter = {};
         let idsToConsiderForDeletion = [...ids]; // IDs that we might attempt to delete
 
-        if (collectionName !== 'users') {
-            deleteFilter.id = { $in: ids };
-            deleteFilter.userId = req.user.uid;
-        } else {
-            // For 'users' collection, only allow deleting the user's own ID if present in the batch.
-            const currentUserIdsInBatch = ids.filter(id => id === req.user.uid);
-            if (currentUserIdsInBatch.length === 0) {
-                // No IDs in the batch match the current user, or none were provided that match.
-                return res.json({
-                    successCount: 0,
-                    errors: ids.map(id => ({ id, error: 'Not authorized or not your own user ID' }))
-                });
+        if (req.requiresOwnershipCheck) {
+            if (collectionName !== 'users') {
+                // For non-users collections, only delete user's own documents
+                deleteFilter.id = { $in: ids };
+                deleteFilter.userId = req.user.uid;
+            } else {
+                // For 'users' collection, only allow deleting the user's own ID if present in the batch.
+                const currentUserIdsInBatch = ids.filter(id => id === req.user.uid);
+                if (currentUserIdsInBatch.length === 0) {
+                    // No IDs in the batch match the current user, or none were provided that match.
+                    return res.json({
+                        successCount: 0,
+                        errors: ids.map(id => ({ id, error: 'Not authorized or not your own user ID' }))
+                    });
+                }
+                deleteFilter.id = { $in: currentUserIdsInBatch };
+                idsToConsiderForDeletion = currentUserIdsInBatch; // We only care about these for success/error reporting
             }
-            deleteFilter.id = { $in: currentUserIdsInBatch };
-            idsToConsiderForDeletion = currentUserIdsInBatch; // We only care about these for success/error reporting
+        } else {
+            // No ownership restriction - admin can delete any
+            deleteFilter.id = { $in: ids };
         }
 
         const result = await Model.deleteMany(deleteFilter);
@@ -574,7 +647,7 @@ router.delete('/:collectionName/batch', async (req, res) => {
 });
 
 // PATCH update a specific path in a document (e.g., add to array)
-router.patch('/:collectionName/:id/path', async (req, res) => {
+router.patch('/:collectionName/:id/path', rbacMiddleware('write'), async (req, res) => {
     try {
         const { collectionName, id } = req.params;
         const { path, data, operation = 'push' } = req.body;
@@ -584,15 +657,18 @@ router.patch('/:collectionName/:id/path', async (req, res) => {
         // It's standard practice to use MongoDB's `_id`. If you use a custom `id`, replace `_id` below.
         const queryFilter = { id };
 
-        // if (collectionName !== 'users') {
-        //     // User can only update documents they own in other collections.
-        //     queryFilter.userId = req.user.uid; // Assumes user ID is on the doc
-        // } else {
-        //     // For 'users' collection, user can only update their own document.
-        //     if (id !== req.user.uid) {
-        //         return res.status(403).json({ msg: 'Forbidden: You can only update your own user document.' });
-        //     }
-        // }
+        // Apply ownership filtering for "own" permissions
+        if (req.requiresOwnershipCheck) {
+            if (collectionName !== 'users') {
+                // User can only update documents they own in other collections.
+                queryFilter.userId = req.user.uid; // Assumes user ID is on the doc
+            } else {
+                // For 'users' collection, user can only update their own document.
+                if (id !== req.user.uid) {
+                    return res.status(403).json({ msg: 'Forbidden: You can only update your own user document.' });
+                }
+            }
+        }
 
         // --- 2. Build Update Operation (Generic and DRY) ---
         // The special `commentIndex` logic is removed. The client should provide the full path.
@@ -624,11 +700,24 @@ router.patch('/:collectionName/:id/path', async (req, res) => {
 });
 
 // DELETE a document by ID
-router.delete('/:collectionName/:id', async (req, res) => {
+router.delete('/:collectionName/:id', rbacMiddleware('delete'), async (req, res) => {
     try {
         const collectionName = req.params.collectionName;
         const Model = getDynamicModel(collectionName);
         let queryFilter = { id: req.params.id };
+
+        // Apply ownership filtering for "own" permissions
+        if (req.requiresOwnershipCheck) {
+            if (collectionName !== 'users') {
+                // For non-users collections, ensure user owns the document
+                queryFilter.userId = req.user.uid;
+            } else {
+                // For users collection, only allow user to delete their own document
+                if (req.params.id !== req.user.uid) {
+                    return res.status(403).json({ msg: 'Forbidden: You can only delete your own user document.' });
+                }
+            }
+        }
 
         const deletedDocument = await Model.findOneAndDelete(queryFilter);
 
@@ -648,7 +737,7 @@ router.delete('/:collectionName/:id', async (req, res) => {
 // POST execute a custom aggregation pipeline on a collection
 // Example: POST /api/orders/pipe
 // Body: { "pipeline": [ { $match: { status: "completed" } }, { $group: { _id: null, total: { $sum: "$amount" } } } ] }
-router.post('/:collectionName/pipe', async (req, res) => {
+router.post('/:collectionName/pipe', rbacMiddleware('read'), async (req, res) => {
     try {
         const collectionName = req.params.collectionName;
         const { pipeline, options = {} } = req.body;
@@ -659,8 +748,31 @@ router.post('/:collectionName/pipe', async (req, res) => {
 
         const Model = getDynamicModel(collectionName);
 
+        // Apply ownership filtering for "own" permissions
+        let finalPipeline = [...pipeline];
+        if (req.requiresOwnershipCheck) {
+            // Add ownership filter as the first stage in the pipeline
+            const ownershipMatch = {
+                $match: collectionName !== 'users'
+                    ? { userId: req.user.uid }
+                    : { id: req.user.uid }
+            };
+
+            // Insert ownership filter at the beginning or after the first $match stage
+            if (finalPipeline.length > 0 && finalPipeline[0].$match) {
+                // Merge with existing $match stage
+                finalPipeline[0].$match = {
+                    ...finalPipeline[0].$match,
+                    ...ownershipMatch.$match
+                };
+            } else {
+                // Add as first stage
+                finalPipeline.unshift(ownershipMatch);
+            }
+        }
+
         // Execute the aggregation pipeline
-        const query = Model.aggregate(pipeline);
+        const query = Model.aggregate(finalPipeline);
         
         // Apply options like sort, skip, limit if provided
         if (options.sort) {

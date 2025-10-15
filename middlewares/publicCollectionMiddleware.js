@@ -10,7 +10,7 @@ const publicCollectionMiddleware = (req, res, next) => {
                         (req.path.split('/').filter(Boolean).pop());
   
   // Only apply this logic for GET requests and if we have a collection name
-  if (req.method !== 'GET' || !collectionName) {
+  if (!req.path.includes('/pipe') && req.method !== 'GET' || !collectionName) {
     return next();
   }
   

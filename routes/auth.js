@@ -149,7 +149,7 @@ router.get('/me', require('../middlewares/authMiddleware'), async (req, res) => 
 
     res.json({
       uid: user.id,
-      ...user
+      ...user.toObject()
     });
   } catch (error) {
     console.error('Get User Error:', error);

@@ -52,7 +52,6 @@ if (config.authType === 'local') {
       const token = jwt.sign(
         { uid: newUser.id, email: newUser.email },
         config.jwtSecret,
-        { expiresIn: '7d' }
       );
 
       res.status(201).json({
@@ -112,7 +111,6 @@ if (config.authType === 'local') {
       const token = jwt.sign(
         { uid: user.id, email: user.email },
         config.jwtSecret,
-        { expiresIn: '7d' }
       );
 
       res.json({

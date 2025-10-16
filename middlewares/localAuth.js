@@ -22,7 +22,8 @@ const localAuth = async (token) => {
       uid: ourUser.id,
       email: ourUser.email,
       email_verified: ourUser.email_verified || false,
-      plan: ourUser.plan || 'free'
+      plan: ourUser.plan || 'free',
+      role: ourUser.role || 'user',
     };
   } catch (error) {
     console.error('Local Auth Error:', error);

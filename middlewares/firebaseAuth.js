@@ -30,7 +30,8 @@ const firebaseAuth = async (token) => {
       uid: decodedToken.uid,
       email: decodedToken.email,
       email_verified: decodedToken.email_verified,
-      plan: ourUser.plan || 'free'
+      plan: ourUser.plan || 'free',
+      role: ourUser.role || 'user',
     };
   } catch (error) {
     console.error('Firebase Auth Error:', error);

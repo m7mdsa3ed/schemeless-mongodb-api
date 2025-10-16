@@ -1,6 +1,14 @@
 const rbacConfig = require('../config/rbac');
 
 /**
+ * Get the ownership field for a collection
+ */
+const getOwnershipField = (collectionName) => {
+  const collectionRules = rbacConfig[collectionName] || rbacConfig.default;
+  return collectionRules.ownershipField || 'userId'; // Default to 'userId' for backward compatibility
+};
+
+/**
  * Role-Based Access Control (RBAC) Middleware for CRUD Operations
  *
  * This middleware checks if the authenticated user has permission
@@ -40,6 +48,9 @@ const rbacMiddleware = (operation) => {
           message: `Role '${userRole}' not authorized for collection '${collectionName}'`
         });
       }
+
+      // Store ownership field for use in routes
+      req.ownershipField = getOwnershipField(collectionName);
 
       // Check operation permission
       const hasPermission = checkOperationPermission(
@@ -176,5 +187,6 @@ const filterRequestBodyFields = (body, allowedFields) => {
 module.exports = {
   rbacMiddleware,
   filterDocumentFields,
-  filterRequestBodyFields
+  filterRequestBodyFields,
+  getOwnershipField
 };

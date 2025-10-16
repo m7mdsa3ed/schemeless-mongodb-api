@@ -247,8 +247,8 @@ router.get('/:collectionName', rbacMiddleware('read'), async (req, res) => {
         // Apply ownership filtering for "own" permissions
         if (req.requiresOwnershipCheck) {
             if (collectionName !== 'users') {
-                // For non-users collections, filter by userId
-                filter.userId = req.user.uid;
+                // For non-users collections, filter by the configured ownership field
+                filter[req.ownershipField] = req.user.uid;
             } else {
                 // For users collection, only allow user to see their own document
                 filter.id = req.user.uid;
@@ -397,7 +397,7 @@ router.get('/:collectionName/:id', rbacMiddleware('read'), async (req, res) => {
         if (req.requiresOwnershipCheck) {
             if (collectionName !== 'users') {
                 // For non-users collections, ensure user owns the document
-                queryFilter.userId = req.user.uid;
+                queryFilter[req.ownershipField] = req.user.uid;
             } else {
                 // For users collection, only allow user to see their own document
                 queryFilter.id = req.user.uid;
@@ -467,12 +467,12 @@ router.post('/:collectionName', rbacMiddleware('create'), limitsMiddleware, asyn
 
         // Apply ownership logic for "own" permissions
         if (req.requiresOwnershipCheck) {
-            // Auto-assign userId if not provided
-            if (!documentData.userId) {
-                documentData.userId = req.user.uid;
+            // Auto-assign ownership field if not provided
+            if (!documentData[req.ownershipField]) {
+                documentData[req.ownershipField] = req.user.uid;
             }
             // Ensure user is setting themselves as owner
-            else if (documentData.userId !== req.user.uid) {
+            else if (documentData[req.ownershipField] !== req.user.uid) {
                 return res.status(403).json({
                     msg: 'Forbidden: You can only create documents for yourself'
                 });
@@ -514,12 +514,12 @@ router.post('/:collectionName/batch', rbacMiddleware('create'), limitsMiddleware
 
             // Apply ownership logic for "own" permissions
             if (req.requiresOwnershipCheck) {
-                // Auto-assign userId if not provided
-                if (!documentData.userId) {
-                    documentData.userId = req.user.uid;
+                // Auto-assign ownership field if not provided
+                if (!documentData[req.ownershipField]) {
+                    documentData[req.ownershipField] = req.user.uid;
                 }
                 // Ensure user is setting themselves as owner
-                else if (documentData.userId !== req.user.uid) {
+                else if (documentData[req.ownershipField] !== req.user.uid) {
                     throw new Error(`Forbidden: You can only create documents for yourself`);
                 }
             }
@@ -554,7 +554,7 @@ router.put('/:collectionName/:id', rbacMiddleware('write'), async (req, res) => 
         if (req.requiresOwnershipCheck) {
             if (collectionName !== 'users') {
                 // For non-users collections, ensure user owns the document
-                queryFilter.userId = req.user.uid;
+                queryFilter[req.ownershipField] = req.user.uid;
             } else {
                 // For users collection, only allow user to update their own document
                 if (req.params.id !== req.user.uid) {
@@ -606,7 +606,7 @@ router.delete('/:collectionName/batch', rbacMiddleware('delete'), async (req, re
             if (collectionName !== 'users') {
                 // For non-users collections, only delete user's own documents
                 deleteFilter.id = { $in: ids };
-                deleteFilter.userId = req.user.uid;
+                deleteFilter[req.ownershipField] = req.user.uid;
             } else {
                 // For 'users' collection, only allow deleting the user's own ID if present in the batch.
                 const currentUserIdsInBatch = ids.filter(id => id === req.user.uid);
@@ -661,7 +661,7 @@ router.patch('/:collectionName/:id/path', rbacMiddleware('write'), async (req, r
         if (req.requiresOwnershipCheck) {
             if (collectionName !== 'users') {
                 // User can only update documents they own in other collections.
-                queryFilter.userId = req.user.uid; // Assumes user ID is on the doc
+                queryFilter[req.ownershipField] = req.user.uid; // Uses configured ownership field
             } else {
                 // For 'users' collection, user can only update their own document.
                 if (id !== req.user.uid) {
@@ -710,7 +710,7 @@ router.delete('/:collectionName/:id', rbacMiddleware('delete'), async (req, res)
         if (req.requiresOwnershipCheck) {
             if (collectionName !== 'users') {
                 // For non-users collections, ensure user owns the document
-                queryFilter.userId = req.user.uid;
+                queryFilter[req.ownershipField] = req.user.uid;
             } else {
                 // For users collection, only allow user to delete their own document
                 if (req.params.id !== req.user.uid) {
@@ -754,7 +754,7 @@ router.post('/:collectionName/pipe', rbacMiddleware('read'), async (req, res) =>
             // Add ownership filter as the first stage in the pipeline
             const ownershipMatch = {
                 $match: collectionName !== 'users'
-                    ? { userId: req.user.uid }
+                    ? { [req.ownershipField]: req.user.uid }
                     : { id: req.user.uid }
             };
 

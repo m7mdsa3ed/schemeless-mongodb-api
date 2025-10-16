@@ -35,6 +35,7 @@ function mergeWithEnvDefaults(defaultConfig, envPrefix) {
 
 // Default permissions for collections without explicit rules
 const defaultPermissions = {
+  ownershipField: "userId", // Default ownership field
   roles: {
     admin: {
       read: ["all", "own"],
@@ -54,6 +55,7 @@ const defaultPermissions = {
 // Collection-specific rules
 const collectionsConfig = {
   orders: {
+    ownershipField: "userId", // Can be customized per collection
     roles: {
       admin: {
         read: ["all", "own"],
@@ -95,6 +97,7 @@ const collectionsConfig = {
   },
 
   products: {
+    ownershipField: "ownerId", // Example: products use ownerId instead of userId
     roles: {
       admin: {
         read: ["all", "own"],
@@ -146,6 +149,7 @@ const collectionsConfig = {
   },
 
   comments: {
+    ownershipField: "authorId", // Example: comments use authorId
     roles: {
       admin: {
         read: ["all", "own"],
@@ -154,7 +158,7 @@ const collectionsConfig = {
         delete: ["all", "own"]
       },
       user: {
-        read: ["all"], // Users can read all products
+        read: ["all"], // Users can read all comments
         write: ["own"],
         create: true,
         delete: ["own"]

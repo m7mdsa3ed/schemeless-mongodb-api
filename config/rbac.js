@@ -199,6 +199,23 @@ const collectionsConfig = {
       }
     }
   },
+
+  'blog-posts': {
+    roles: {
+      admin: {
+        read: ["all", "own"],
+        write: ["all", "own"],
+        create: true,
+        delete: ["all", "own"]
+      },
+      user: {
+        read: ["all"], // Users can read all products
+        write: ["own"],
+        create: true,
+        delete: ["own"]
+      }
+    }
+  },
 };
 
 // Helper function to apply granular operation overrides

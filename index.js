@@ -10,6 +10,7 @@ const functionRoutes = require('./routes/functions');
 const queryRoutes = require('./routes/queries');
 const emailRoutes = require('./routes/email');
 const rbacRoutes = require('./routes/rbac');
+const analyticsMiddleware = require('./middlewares/analyticsMiddleware');
 const config = require('./config');
 const notificationService = require('./services/notificationService');
 
@@ -17,6 +18,12 @@ const app = express();
 
 // Enable CORS for all origins
 app.use(cors());
+
+// Analytics middleware (only if enabled)
+if (config.analytics.enabled) {
+  app.use(analyticsMiddleware);
+  console.log('Analytics middleware enabled');
+}
 
 // Connect Database
 connectDB().then(dbConnection => {

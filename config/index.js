@@ -61,6 +61,14 @@ const config = {
     maxFileSize: process.env.MAX_FILE_SIZE ? parseInt(process.env.MAX_FILE_SIZE) : 10 * 1024 * 1024, // 10MB default
   },
 
+  // Analytics Configuration
+  analytics: {
+    enabled: process.env.ANALYTICS_ENABLED !== 'false',
+    collectionName: process.env.ANALYTICS_COLLECTION_NAME || 'analytics_logs',
+    retentionDays: process.env.ANALYTICS_RETENTION_DAYS ? parseInt(process.env.ANALYTICS_RETENTION_DAYS) : 30,
+    sampleRate: process.env.ANALYTICS_SAMPLE_RATE ? parseFloat(process.env.ANALYTICS_SAMPLE_RATE) : 1.0,
+  },
+
   // Email Configuration
   email: {
     // Email provider: 'smtp' or 'api'

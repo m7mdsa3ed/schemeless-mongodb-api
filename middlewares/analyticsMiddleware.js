@@ -1,5 +1,5 @@
 const UAParser = require('ua-parser-js');
-const { getDynamicModel } = require('../lib/dynamicModel');
+const { getDynamicModel } = require('../lib/getDynamicModel');
 const config = require('../config');
 
 /**
@@ -37,6 +37,8 @@ const analyticsMiddleware = (req, res, next) => {
       timestamp: new Date(),
       method: req.method,
       path: req.path,
+      url: req.originalUrl,
+      queryString: req.query,
       ip: getClientIP(),
       statusCode: res.statusCode,
       responseTime: responseTime,
